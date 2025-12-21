@@ -1,0 +1,60 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11222.15
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MeetingTranscription", "MeetingTranscription\MeetingTranscription.csproj", "{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}"
+EndProject
+Project("{A9E3F50B-275E-4AF7-ADCE-8BE12D41E305}") = "M365Agent", "M365Agent\M365Agent.ttkproj", "{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{E7F8FF0D-402A-4D45-8F7A-A7B810662C8B}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+		MeetingTranscription.slnLaunch.user = MeetingTranscription.slnLaunch.user
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EchoBot", "EchoBot\EchoBot.csproj", "{1FD54D98-9A76-9E40-A5F1-CA3743F54154}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Debug|x64.Build.0 = Debug|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Release|x64.ActiveCfg = Release|Any CPU
+		{3EDF2E79-29C1-4DAC-B76B-97A32A4F79C2}.Release|x64.Build.0 = Release|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|x64.Build.0 = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Debug|x64.Deploy.0 = Debug|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Release|x64.ActiveCfg = Release|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Release|x64.Build.0 = Release|Any CPU
+		{766DB75A-580E-4D88-9BF9-CDBFC5FDE3DB}.Release|x64.Deploy.0 = Release|Any CPU
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Debug|Any CPU.Build.0 = Debug|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Debug|x64.ActiveCfg = Debug|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Debug|x64.Build.0 = Debug|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Release|Any CPU.ActiveCfg = Release|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Release|Any CPU.Build.0 = Release|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Release|x64.ActiveCfg = Release|x64
+		{1FD54D98-9A76-9E40-A5F1-CA3743F54154}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {33A214ED-5D5A-4382-B077-F057A7993B98}
+	EndGlobalSection
+EndGlobal
