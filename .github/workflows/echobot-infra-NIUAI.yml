@@ -6,14 +6,14 @@ on:
   # https://docs.github.com/en/free-pro-team@latest/actions/reference/events-that-trigger-workflows
   push:
     branches:
-      - 'master'
+      - 'main'
     paths:
       - './ADF/**'
       - .github/workflows/echobot-infra-NIUAI.yml
 
   pull_request:
     branches:
-      - 'master'
+      - 'main'
     paths:
       - './ADF/**'
       - .github/workflows/echobot-infra-NIUAI.yml
