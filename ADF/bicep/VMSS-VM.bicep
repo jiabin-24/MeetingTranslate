@@ -381,7 +381,7 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
                 timestamp: deploymentTime
               }
               protectedSettings: {
-                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -Command "Expand-Archive -LiteralPath DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; .\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
+                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; Expand-Archive -LiteralPath $d\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; .\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
                 managedIdentity: {
                   clientId: reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', '${Deployment}-uaiStorageAccountFileContributor'), '2018-11-30').clientId
                 }
