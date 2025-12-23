@@ -383,7 +383,7 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
                 timestamp: deploymentTime
               }
               protectedSettings: {
-                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -NoProfile -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; Write-Output \\"Working Directory: $d\\"'
+                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -NoProfile -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; "WorkDir: {0}" -f $work | Add-Content -Path C:\\customscript.log'
                 managedIdentity: {
                   clientId: reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', '${Deployment}-uaiStorageAccountFileContributor'), '2018-11-30').clientId
                 }
