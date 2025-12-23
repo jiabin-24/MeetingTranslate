@@ -370,24 +370,47 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
           //   }
           // }
           {
-            name: 'CustomScriptDSC'
+            name: 'Microsoft.Powershell.DSC'
             properties: {
-              publisher: 'Microsoft.Compute'
-              type: 'CustomScriptExtension'
-              typeHandlerVersion: '1.10'
+              provisionAfterExtensions: [
+              ]
+              publisher: 'Microsoft.Powershell'
+              type: 'DSC'
+              typeHandlerVersion: '2.24'
               autoUpgradeMinorVersion: true
+              forceUpdateTag: deploymentTime
               settings: {
-                fileUris: [
-                  '${Global._artifactsLocation}/ext-DSC/${DSCConfigName}.zip'
-                ]
-                timestamp: deploymentTime
+                wmfVersion: 'latest'
+                configuration: {
+                  url: '${Global._artifactsLocation}/ext-DSC/DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip'
+                  script: 'DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1'
+                  function: contains(AppServer, 'DSConfig') ? AppServer.DSConfig : contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'
+                }
+                configurationArguments: {
+                  DomainName: contains(Global,'ADDomainName') ? Global.ADDomainName : '${resourceGroup().location}.cloudapp.azure.com'
+                  storageAccountId: saaccountidglobalsource.id
+                  appInsightsConnectionString: ai.properties.ConnectionString
+                  deployment: Deployment
+                  networkid: '${networkId}.'
+                  appInfo: contains(AppServer, 'AppInfo') ? string(AppServer.AppInfo) : ''
+                  DataDiskInfo: string(VM.DataDisk)
+                  NoDomainJoin: contains(Global,'ADDomainName') ? false : true
+                  clientIDLocal: '${Environment}${DeploymentID}' == 'G0' ? '' : reference('${subscription().id}/resourceGroups/${resourceGroup().name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${Deployment}-uaiKeyVaultSecretsGet', '2018-11-30').ClientId
+                  clientIDGlobal: '${Environment}${DeploymentID}' == 'G0' ? '' : reference('${subscription().id}/resourceGroups/${resourceGroup().name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${Deployment}-uaiStorageAccountFileContributor', '2018-11-30').ClientId
+                }
+                configurationData: {
+                  url: '${Global._artifactsLocation}/ext-CD/${AppServer.Role}-ConfigurationData.psd1'
+                }
               }
               protectedSettings: {
-                //commandToExecute: 'powershell -ExecutionPolicy Unrestricted -NoProfile -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; \\"hello2 $d\\" | Add-Content -Path C:\\customscript.log'
-                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -NoProfile -Command "$pl=\\"C:/Packages/Plugins/Microsoft.Compute.CustomScriptExtension\\"; $v=(Get-ChildItem -LiteralPath $pl -Directory | Sort-Object Name -Descending | Select-Object -First 1); $dl=(Get-ChildItem -LiteralPath (Join-Path $v.FullName \\"Downloads\\") -Directory | Sort-Object Name -Descending | Select-Object -First 1); $cfg=\\"${DSCConfigName}\\"; Expand-Archive -LiteralPath (Join-Path $dl.FullName (\\"ext-DSC/\\" + $cfg + \\".zip\\")) -DestinationPath \\"C:/Packages/Plugins/DSC\\" -Force; Set-Location \\"C:/Packages/Plugins/DSC\\"; & (Join-Path (Get-Location).Path ($cfg + \\".ps1\\")); Start-DscConfiguration -Path . -Wait -Force"'
-                managedIdentity: {
-                  clientId: reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', '${Deployment}-uaiStorageAccountFileContributor'), '2018-11-30').clientId
+                configurationArguments: {
+                  AdminCreds: {
+                    UserName: Global.vmAdminUserName
+                    Password: vmAdminPassword
+                  }
                 }
+                configurationUrlSasToken: '?${DSCSAS}'
+                configurationDataUrlSasToken: '?${DSCSAS}'
               }
             }
           }
