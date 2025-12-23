@@ -368,47 +368,21 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
           //   }
           // }
           {
-            name: 'Microsoft.Powershell.DSC'
+            name: 'CustomScriptDSC'
             properties: {
-              provisionAfterExtensions: [
-              ]
-              publisher: 'Microsoft.Powershell'
-              type: 'DSC'
-              typeHandlerVersion: '2.24'
+              publisher: 'Microsoft.Compute'
+              type: 'CustomScriptExtension'
+              typeHandlerVersion: '1.10'
               autoUpgradeMinorVersion: true
-              forceUpdateTag: deploymentTime
               settings: {
-                wmfVersion: 'latest'
-                configuration: {
-                  url: '${Global._artifactsLocation}/ext-DSC/DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip'
-                  script: 'DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1'
-                  function: contains(AppServer, 'DSConfig') ? AppServer.DSConfig : contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'
-                }
-                configurationArguments: {
-                  DomainName: contains(Global,'ADDomainName') ? Global.ADDomainName : '${resourceGroup().location}.cloudapp.azure.com'
-                  storageAccountId: saaccountidglobalsource.id
-                  appInsightsConnectionString: ai.properties.ConnectionString
-                  deployment: Deployment
-                  networkid: '${networkId}.'
-                  appInfo: contains(AppServer, 'AppInfo') ? string(AppServer.AppInfo) : ''
-                  DataDiskInfo: string(VM.DataDisk)
-                  NoDomainJoin: contains(Global,'ADDomainName') ? false : true
-                  clientIDLocal: '${Environment}${DeploymentID}' == 'G0' ? '' : reference('${subscription().id}/resourceGroups/${resourceGroup().name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${Deployment}-uaiKeyVaultSecretsGet', '2018-11-30').ClientId
-                  clientIDGlobal: '${Environment}${DeploymentID}' == 'G0' ? '' : reference('${subscription().id}/resourceGroups/${resourceGroup().name}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${Deployment}-uaiStorageAccountFileContributor', '2018-11-30').ClientId
-                }
-                configurationData: {
-                  url: '${Global._artifactsLocation}/ext-CD/${AppServer.Role}-ConfigurationData.psd1'
-                }
+                fileUris: [
+                  '${Global._artifactsLocation}/ext-DSC/DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip'
+                ]
+                timestamp: deploymentTime
               }
               protectedSettings: {
-                configurationArguments: {
-                  AdminCreds: {
-                    UserName: Global.vmAdminUserName
-                    Password: vmAdminPassword
-                  }
-                }
-                configurationUrlSasToken: '?${DSCSAS}'
-                configurationDataUrlSasToken: '?${DSCSAS}'
+                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -Command "Expand-Archive -LiteralPath DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; .\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
+                managedIdentity: {}
               }
             }
           }
