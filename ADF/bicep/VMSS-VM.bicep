@@ -92,6 +92,8 @@ var ConfigurationMode = {
   P: 'ApplyAndMonitor'
 }
 var DSCConfigurationModeFrequencyMins = 15
+var DSCConfigName = 'DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}'
+
 var WAFBE = contains(AppServer, 'WAFBE') ? AppServer.WAFBE : []
 var LBBE = contains(AppServer, 'LBBE') ? AppServer.LBBE : []
 var NATPools = contains(AppServer, 'NATName') ? AppServer.NATName : []
@@ -376,12 +378,12 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
               autoUpgradeMinorVersion: true
               settings: {
                 fileUris: [
-                  '${Global._artifactsLocation}/ext-DSC/DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip'
+                  '${Global._artifactsLocation}/ext-DSC/${DSCConfigName}.zip'
                 ]
                 timestamp: deploymentTime
               }
               protectedSettings: {
-                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; write-host "hello niuai" $d; Expand-Archive -LiteralPath "$d\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.zip" -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; .\\DSC-${(contains(AppServer, 'DSConfig') ? AppServer.DSConfig : (contains(DSCConfigLookup, DeploymentName) ? DSCConfigLookup[DeploymentName] : 'AppServers'))}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
+                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; Write-Output "Working Directory: $d"; Expand-Archive -LiteralPath "$d\\${DSCConfigName}.zip" -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; .\\${DSCConfigName}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
                 managedIdentity: {
                   clientId: reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', '${Deployment}-uaiStorageAccountFileContributor'), '2018-11-30').clientId
                 }
