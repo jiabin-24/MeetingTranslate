@@ -75,7 +75,7 @@ class Program
             builder.Configuration.AddDotNetEnv();
         
         // Add Environment Variables
-        builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
+        //builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
