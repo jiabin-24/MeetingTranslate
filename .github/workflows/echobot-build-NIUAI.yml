@@ -43,9 +43,9 @@ jobs:
     - name: Create Build Directory
       run: mkdir ${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/
     
-    - name: Build Solution
+    - name: Publish Project
       run: |
-        dotnet build MeetingTranscription/MeetingTranscription.csproj -nologo -p:Platform=x64 -p:OutDir="${{ github.workspace }}/${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/"
+        dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o "${{ github.workspace }}/${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/"
         
     - name: Run pwsh
       shell: pwsh
