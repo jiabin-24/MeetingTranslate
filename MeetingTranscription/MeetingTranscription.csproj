@@ -31,10 +31,4 @@
     </Content>
   </ItemGroup>
 
-    <ItemGroup>
-      <None Update="StartService.bat">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </None>
-    </ItemGroup>
-
 </Project>
