@@ -15,7 +15,9 @@ namespace EchoBot
         {
             app.Services
                 .AddOptions<AppSettings>()
-                .BindConfiguration(nameof(AppSettings));
+                .BindConfiguration(nameof(AppSettings))
+                .ValidateDataAnnotations()
+                .ValidateOnStart();
 
             app.Services.AddSingleton<IGraphLogger, GraphLogger>(_ => new GraphLogger("EchoBotWorker", redirectToTrace: true));
             app.Services.AddSingleton<IBotMediaLogger, BotMediaLogger>();
