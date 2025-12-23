@@ -384,13 +384,10 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
               }
               protectedSettings: {
                 commandToExecute: '''
-                powershell -ExecutionPolicy Unrestricted -Command "& {
-                  $work = $env:AZ_BATCH_TASK_WORKING_DIR
-                  Write-Output \"Working Directory: $work\"
-                  $zip = Join-Path $work \"${DSCConfigName}.zip\"
-                  $dest = 'C:\Packages\Plugins\DSC'
-                  Write-Output \"Working Directory: $zip\"
-                }"
+                  powershell -ExecutionPolicy Unrestricted -Command "& {
+                    $work = $env:AZ_BATCH_TASK_WORKING_DIR
+                    Write-Output "Working Directory: $work"
+                  }"
                 '''
                 //commandToExecute: 'powershell -ExecutionPolicy Unrestricted -NoProfile -Command "$d=$env:AZ_BATCH_TASK_WORKING_DIR; Write-Output \\"Working Directory: $d\\"; $zip=Join-Path $d \\"${DSCConfigName}.zip\\"; Write-Output \\"Zip Path: $zip\\"; if (!(Test-Path -LiteralPath $zip)) { Write-Error \\"Zip not found: $zip\\"; exit 1 }; Expand-Archive -LiteralPath $zip -DestinationPath C:\\Packages\\Plugins\\DSC -Force; Set-Location C:\\Packages\\Plugins\\DSC; Write-Output \\"Running: ${DSCConfigName}.ps1\\"; & .\\${DSCConfigName}.ps1; Start-DscConfiguration -Path . -Wait -Force"'
                 managedIdentity: {
