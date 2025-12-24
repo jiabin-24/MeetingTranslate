@@ -13,9 +13,10 @@ using Microsoft.Bot.Connector.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
-class Program
+static class Program
 {
     public static void Main(string[] args)
     {
@@ -25,6 +26,13 @@ class Program
         BuildConfig(builder);
 
         builder.Services.AddHttpClient().AddControllers().AddNewtonsoftJson();
+
+        // The following line enables Application Insights telemetry collection.
+        builder.Services.AddApplicationInsightsTelemetry(option =>
+        {
+            option.ConnectionString = builder.Configuration.GetValue<string>("ApplicationInsights:ConnectionString");
+        });
+        builder.Logging.AddApplicationInsights();
 
         // Creates Singleton Card Factory.
         builder.Services.AddSingleton<ICardFactory, CardFactory>();
@@ -92,4 +100,3 @@ class Program
         });
     }
 }
-
