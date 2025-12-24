@@ -86,6 +86,9 @@ class Program
             botOptions.AppBaseUrl = configuration.GetValue<string>("AppBaseUrl");
             botOptions.UserId = configuration.GetValue<string>("UserId");
             botOptions.GraphApiEndpoint = configuration.GetValue<string>("GraphApiEndpoint");
+
+            if (string.IsNullOrEmpty(botOptions.MicrosoftAppPassword))
+                throw new System.Exception("MicrosoftAppPassword is null or empty. Please check your configuration.");
         });
     }
 }
