@@ -15,6 +15,7 @@ using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -38,6 +39,14 @@ namespace MeetingTranscription.Bots
         private readonly ConcurrentDictionary<string, string> transcriptsDictionary;
 
         /// <summary>
+        /// Gets the thread-safe dictionary that stores meeting information for bots, keyed by bot identifier.
+        /// </summary>
+        /// <remarks>This dictionary allows concurrent access and updates from multiple threads. Each key
+        /// represents a unique bot identifier, and the corresponding value contains meeting-related data for that
+        /// bot.</remarks>
+        private static ConcurrentDictionary<string, string> _botMeetingsDictionary { get; } = new ConcurrentDictionary<string, string>();
+
+        /// <summary>
         /// Instance of card factory to create adaptive cards.
         /// </summary>
         private readonly ICardFactory cardFactory;
@@ -45,7 +54,7 @@ namespace MeetingTranscription.Bots
         /// <summary>
         /// The bot service
         /// </summary>
-        private readonly IBotService botService;
+        private readonly IBotService _botService;
 
         /// <summary>
         /// Creates bot instance.
@@ -60,7 +69,7 @@ namespace MeetingTranscription.Bots
             this.azureSettings = azureSettings;
             graphHelper = new GraphHelper(azureSettings);
             this.cardFactory = cardFactory;
-            this.botService = botService;
+            this._botService = botService;
         }
 
         /// <summary>
@@ -93,10 +102,12 @@ namespace MeetingTranscription.Bots
             try
             {
                 // Join the meeting using the join URL from the meeting details
-                await botService.JoinCallAsync(new JoinCallBody
+                var botMeeting = await _botService.JoinCallAsync(new JoinCallBody
                 {
                     JoinUrl = meeting.JoinUrl.ToString()
                 });
+
+                _botMeetingsDictionary.TryAdd(meeting.Id, botMeeting!.Resource!.ChatInfo!.ThreadId);
             }
             catch (Exception ex)
             {
@@ -119,6 +130,12 @@ namespace MeetingTranscription.Bots
                 var meetingInfo = await TeamsInfo.GetMeetingInfoAsync(turnContext);
                 Console.WriteLine($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
+                // End the bot's call in the meeting
+                if (_botMeetingsDictionary.TryRemove(meeting.Id, out var threadId))
+                {
+                    await _botService.EndCallByThreadIdAsync(threadId);
+                }
+
                 // NEW: Get meeting organizer information when meeting ends
                 var organizerId = await graphHelper.GetMeetingOrganizerFromTeamsContextAsync(turnContext);
                 if (!string.IsNullOrEmpty(organizerId))
@@ -128,28 +145,28 @@ namespace MeetingTranscription.Bots
 
                 // NEW: Use Teams context to find organizer and get transcripts
                 var result = await graphHelper.GetMeetingTranscriptionsAsync(meetingInfo.Details.MsGraphResourceId, organizerId);
-                
+
                 if (!string.IsNullOrEmpty(result))
                 {
                     transcriptsDictionary.AddOrUpdate(meetingInfo.Details.MsGraphResourceId, result, (key, newValue) => result);
 
                     var attachment = this.cardFactory.CreateAdaptiveCardAttachement(new { MeetingId = meetingInfo.Details.MsGraphResourceId });
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
-                    
+
                     Console.WriteLine($"Successfully retrieved and cached meeting transcript for {meetingInfo.Details.MsGraphResourceId}");
                 }
                 else
                 {
                     var attachment = this.cardFactory.CreateNotFoundCardAttachement();
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
-                    
+
                     Console.WriteLine($"No transcript found for meeting {meetingInfo.Details.MsGraphResourceId}");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
-                
+
                 // Send error card to user
                 var errorAttachment = this.cardFactory.CreateNotFoundCardAttachement();
                 await turnContext.SendActivityAsync(MessageFactory.Attachment(errorAttachment), cancellationToken);
