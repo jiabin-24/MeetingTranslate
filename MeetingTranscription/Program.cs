@@ -1,4 +1,5 @@
-﻿using DotNetEnv.Configuration;
+﻿using Azure.Identity;
+using DotNetEnv.Configuration;
 using EchoBot;
 using MeetingTranscription;
 using MeetingTranscription.Bots;
@@ -70,12 +71,11 @@ class Program
 
     private static void BuildConfig(WebApplicationBuilder builder)
     {
-        // Load the configuration from azure key vault
+        // Load the configuration from the .env file in development environment
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
-        
-        // Add Environment Variables
-        //builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
+        else
+            builder.Configuration.AddAzureKeyVault(new System.Uri(builder.Configuration.GetValue<string>("AzureKeyVaultURL")), new DefaultAzureCredential());
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
