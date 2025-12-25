@@ -1,5 +1,4 @@
-﻿using Azure.Identity;
-using DotNetEnv.Configuration;
+﻿using DotNetEnv.Configuration;
 using EchoBot;
 using MeetingTranscription;
 using MeetingTranscription.Bots;
@@ -14,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Concurrent;
 
 static class Program
@@ -82,21 +82,22 @@ static class Program
         // Load the configuration from the .env file in development environment
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
-        else
-            builder.Configuration.AddAzureKeyVault(new System.Uri(builder.Configuration.GetValue<string>("AzureKeyVaultURL")), new DefaultAzureCredential());
+
+        // Add Environment Variables
+        builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
         {
-            botOptions.MicrosoftAppId = configuration.GetValue<string>("MicrosoftAppId");
-            botOptions.MicrosoftAppPassword = configuration.GetValue<string>("MicrosoftAppPassword");
+            botOptions.MicrosoftAppId = configuration.GetValue<string>("AppSettings:AadAppId");
+            botOptions.MicrosoftAppPassword = configuration.GetValue<string>("AppSettings:AadAppSecret");
             botOptions.MicrosoftAppTenantId = configuration.GetValue<string>("MicrosoftAppTenantId");
             botOptions.AppBaseUrl = configuration.GetValue<string>("AppBaseUrl");
             botOptions.UserId = configuration.GetValue<string>("UserId");
             botOptions.GraphApiEndpoint = configuration.GetValue<string>("GraphApiEndpoint");
 
             if (string.IsNullOrEmpty(botOptions.MicrosoftAppPassword))
-                throw new System.Exception("MicrosoftAppPassword is null or empty. Please check your configuration.");
+                throw new ArgumentException("MicrosoftAppPassword is null or empty. Please check your configuration.");
         });
     }
 }
