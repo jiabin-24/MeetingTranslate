@@ -24,7 +24,7 @@
             FWRules                     = @(
                 @{
                     Name      = 'EchoBot'
-                    LocalPort = ('8445', '9441')
+                    LocalPort = ('8445', '9442', '9441')
                 }
             )
             
@@ -49,6 +49,10 @@
 
             # default environment variables
             EnvironmentVarPresent       = @(
+                @{
+                    Name  = 'AppSettings:BotCallingInternalPort'
+                    Value = '9442'
+                },
                 @{
                     Name  = 'AppSettings:BotInternalPort'
                     Value = '9441'
@@ -163,6 +167,11 @@
                 @{
                     Name  = 'MediaControlPlane'
                     Port  = '8445'
+                    AppId = '{7c64d8a0-4cbb-42b6-85a8-de0e00f6a9c6}'
+                },
+                @{
+                    Name  = 'BotCalling'
+                    Port  = '9442'
                     AppId = '{7c64d8a0-4cbb-42b6-85a8-de0e00f6a9c6}'
                 },
                 @{
