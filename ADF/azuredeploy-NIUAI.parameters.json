@@ -225,7 +225,7 @@
             "Probes": [
               {
                 "ProbeName": "CallSignaling",
-                "LBBEProbePort": 9442
+                "LBBEProbePort": 9441
               }
             ],
             "Services": [
@@ -234,7 +234,7 @@
                 "LBBEName": "BotVmss01",
                 "RuleName": "API-CallSignaling",
                 "LBFEPort": 443,
-                "LBBEPort": 9442,
+                "LBBEPort": 9441,
                 "ProbeName": "CallSignaling",
                 "DirectReturn": false
               }
@@ -279,7 +279,7 @@
             },
             "Health": {
               "protocol": "https",
-              "port": "9442",
+              "port": "9441",
               "requestPath": "/health"
             }
           }
