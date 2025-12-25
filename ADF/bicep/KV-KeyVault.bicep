@@ -86,7 +86,7 @@ resource KV 'Microsoft.KeyVault/vaults@2019-09-01' = {
     }
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: KVInfo.allNetworks
+      defaultAction: 'Allow' //KVInfo.allNetworks
       // ipRules: ipRules
     }
     enabledForDeployment: Defaults.enabledForDeployment
