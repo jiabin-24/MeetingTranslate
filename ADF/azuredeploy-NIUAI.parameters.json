@@ -279,7 +279,7 @@
             },
             "Health": {
               "protocol": "https",
-              "port": "9442",
+              "port": "9441",
               "requestPath": "/health"
             }
           }
