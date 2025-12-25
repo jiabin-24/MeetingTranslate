@@ -24,7 +24,7 @@ $filestocopy = @(
 
     @{
         SourcePath      = "$PSScriptRoot\..\templates\echobot-build-OrgName.yml"
-        DestinationPath = "$PSScriptRoot\..\..\..\..\..\.github\workflows\echobot-build-${OrgName}.yml"
+        DestinationPath = "$PSScriptRoot\..\..\.github\workflows\echobot-build-${OrgName}.yml"
         TokenstoReplace = @(
             @{ Name = '{OrgName}'; Value = $OrgName },
             @{ Name = '{Location}'; Value = $Location },
@@ -34,7 +34,7 @@ $filestocopy = @(
 
     @{
         SourcePath      = "$PSScriptRoot\..\templates\echobot-infra-OrgName.yml"
-        DestinationPath = "$PSScriptRoot\..\..\..\..\..\.github\workflows\echobot-infra-${OrgName}.yml"
+        DestinationPath = "$PSScriptRoot\..\..\.github\workflows\echobot-infra-${OrgName}.yml"
         TokenstoReplace = @(
             @{ Name = '{OrgName}'; Value = $OrgName },
             @{ Name = '{Location}'; Value = $Location },

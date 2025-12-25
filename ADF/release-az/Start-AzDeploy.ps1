@@ -85,7 +85,7 @@ Function global:AzDeploy
     $ResourceGroupName = $prefix + '-' + $OrgName + '-' + $App + '-RG-' + $Environment
 
     #region Global Settings file + Optional Regional Settings file
-    $GlobalGlobal = Get-Content -Path $Artifacts/Global-Global.json | ConvertFrom-Json -Depth 10 | ForEach-Object Global
+    $GlobalGlobal = Get-Content -Path $Artifacts/Global-Global.json | ConvertFrom-Json | ForEach-Object Global
     # Convert any objects back to string so they are not deserialized
     $GlobalGlobal | Get-Member -MemberType NoteProperty | ForEach-Object {
 
