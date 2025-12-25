@@ -34,7 +34,8 @@ namespace EchoBot
             var appSettings = app.Configuration.GetSection("AppSettings").Get<AppSettings>();
             var callListeningUris = new HashSet<string>
             {
-                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings!.BotInternalPort}/"
+                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings!.BotInternalPort}/",
+                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings.BotInternalPort + 1}/"
             };
             app.WebHost.UseUrls([.. callListeningUris]);
 
