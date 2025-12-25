@@ -25,7 +25,7 @@ namespace EchoBot
             app.Services.AddSingleton<IBotService, BotService>();
 
             // determine internal hosting protocol and build listening urls
-            var botInternalHostingProtocol = "http";
+            var botInternalHostingProtocol = "https";
             // localhost
             var baseDomain = "+";
 
@@ -38,7 +38,7 @@ namespace EchoBot
             };
             app.WebHost.UseUrls([.. callListeningUris]);
 
-            if (false && !app.Environment.IsDevelopment())
+            if (!app.Environment.IsDevelopment())
             {
                 app.WebHost.ConfigureKestrel(serverOptions =>
                 {
