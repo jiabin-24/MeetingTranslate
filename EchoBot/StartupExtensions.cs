@@ -25,7 +25,7 @@ namespace EchoBot
             app.Services.AddSingleton<IBotService, BotService>();
 
             // determine internal hosting protocol and build listening urls
-            var botInternalHostingProtocol = "https";
+            var botInternalHostingProtocol = "http";
             // localhost
             var baseDomain = "+";
 
@@ -34,12 +34,11 @@ namespace EchoBot
             var appSettings = app.Configuration.GetSection("AppSettings").Get<AppSettings>();
             var callListeningUris = new HashSet<string>
             {
-                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings!.BotCallingInternalPort}/",
-                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings.BotInternalPort}/"
+                $"{botInternalHostingProtocol}://{baseDomain}:{appSettings!.BotInternalPort}/"
             };
             app.WebHost.UseUrls([.. callListeningUris]);
 
-            if (!app.Environment.IsDevelopment())
+            if (false && !app.Environment.IsDevelopment())
             {
                 app.WebHost.ConfigureKestrel(serverOptions =>
                 {

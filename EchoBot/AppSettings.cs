@@ -46,15 +46,6 @@ namespace EchoBot
         public int BotInternalPort { get; set; }
 
         /// <summary>
-        /// Gets or sets the call signaling port.
-        /// Internal port to listen for new calls load balanced
-        /// from 443 => to this local port
-        /// </summary>
-        /// <value>The call signaling port.</value>
-        [Required]
-        public int BotCallingInternalPort { get; set; }
-
-        /// <summary>
         /// Gets or sets if the bot should use Speech Service
         /// for converting the audio to a Bot voice
         /// </summary>

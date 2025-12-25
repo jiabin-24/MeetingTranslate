@@ -1,5 +1,4 @@
 ﻿using EchoBot.Bot;
-using EchoBot.Constants;
 using EchoBot.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -12,7 +11,6 @@ namespace EchoBot.Controllers
     public class CallsController : ControllerBase
     {
         private readonly ILogger<CallsController> _logger;
-        private readonly AppSettings _settings;
         private readonly IBotService _botService;
 
         public CallsController(ILogger<CallsController> logger,
@@ -20,7 +18,6 @@ namespace EchoBot.Controllers
             IBotService botService)
         {
             _logger = logger;
-            _settings = settings.Value;
             _botService = botService;
         }
 
@@ -41,8 +38,7 @@ namespace EchoBot.Controllers
                 {
                     CallId = call.Id,
                     call.ScenarioId,
-                    call.Resource!.ChatInfo!.ThreadId,
-                    Port = _settings.BotInstanceExternalPort.ToString()
+                    call.Resource!.ChatInfo!.ThreadId
                 };
 
                 return Ok(values);
