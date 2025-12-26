@@ -34,8 +34,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v1
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+        include-prerelease: false
     
     - name: Navigate to Workspace
       run: cd $GITHUB_WORKSPACE
@@ -43,6 +46,35 @@ jobs:
     - name: Create Build Directory
       run: mkdir ${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/
     
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Cache Node modules
+      uses: actions/cache@v4
+      with:
+        path: MeetingTranscription/ClientApp/node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('MeetingTranscription/ClientApp/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    - name: Install and build frontend
+      working-directory: MeetingTranscription/ClientApp
+      run: |
+        npm ci
+        npm run build
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.nuget/packages
+          # optional: add packages directory in repo if present
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
     - name: Publish Project
       run: |
         dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o "${{ github.workspace }}/${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/"
