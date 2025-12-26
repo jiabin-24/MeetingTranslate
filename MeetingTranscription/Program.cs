@@ -46,6 +46,12 @@ static class Program
         // Create the Bot Adapter with error handling enabled.
         builder.Services.AddSingleton<CloudAdapter, AdapterWithErrorHandler>();
 
+        // In production, the React files will be served from this directory
+        builder.Services.AddSpaStaticFiles(configuration =>
+        {
+            configuration.RootPath = "ClientApp/build";
+        });
+
         builder.RegisterBotServices();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
@@ -71,8 +77,17 @@ static class Program
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
             });
-
         app.UseBotServices();
+        app.UseSpaStaticFiles();
+        app.UseSpa(spa =>
+        {
+            spa.Options.SourcePath = "ClientApp";
+            //if (app.Environment.IsDevelopment())
+            //{
+            //    spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
+            //    spa.UseReactDevelopmentServer(npmScript: "start");
+            //}
+        });
 
         app.Run();
     }

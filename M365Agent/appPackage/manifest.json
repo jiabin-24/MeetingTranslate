@@ -14,12 +14,12 @@
     "outline": "outline.png"
   },
   "name": {
-    "short": "TeamsTranslate${{APP_NAME_SUFFIX}}",
+    "short": "TransMeet${{APP_NAME_SUFFIX}}",
     "full": "Meeting Transcript Bot"
   },
   "description": {
-    "short": "Fetch and display meeting transcripts using Microsoft Graph API in Teams.",
-    "full": "This sample app retrieves meeting transcripts via the Graph API and displays them in a task module."
+    "short": "Real-time meeting translation inside Microsoft Teams.",
+    "full": "A lightweight Teams app that provides instant multilingual transcription and translation during meetings, helping participants understand and collaborate across languages."
   },
   "accentColor": "#235EA5",
   "bots": [
@@ -46,13 +46,24 @@
       "supportsVideo": true
     }
   ],
+  "configurableTabs": [
+    {
+      "configurationUrl": "https://${{TEAMS_APP_DOMAIN}}/configure",
+      "canUpdateConfiguration": true,
+      "scopes": [
+        "team",
+        "groupChat"
+      ],
+      "context": [
+        "meetingSidePanel",
+        "meetingStage"
+      ]
+    }
+  ],
   "validDomains": [
     "${{BOT_DOMAIN}}"
   ],
-  "configurableTabs": [
-    
-  ],
-  "permissions": [ "messageTeamMembers" ],
+  "permissions": [ "identity", "messageTeamMembers" ],
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
     "resource": "https://RscPermission"
@@ -63,6 +74,22 @@
         {
           "name": "OnlineMeeting.ReadBasic.Chat",
           "type": "Application"
+        },
+        {
+          "name": "MeetingStage.Write.Chat",
+          "type": "Delegated"
+        },
+        {
+          "name": "ChannelMeetingStage.Write.Group",
+          "type": "Delegated"
+        },
+        {
+          "name": "LiveShareSession.ReadWrite.Chat",
+          "type": "Delegated"
+        },
+        {
+          "name": "LiveShareSession.ReadWrite.Group",
+          "type": "Delegated"
         }
       ]
     }

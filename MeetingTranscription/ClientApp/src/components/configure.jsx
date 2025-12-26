@@ -13,28 +13,22 @@ const Configure = props => {
             microsoftTeams.app.notifySuccess();
             microsoftTeams.pages.config.registerOnSaveHandler(function (saveEvent) {
                 microsoftTeams.pages.config.setConfig({
-                    entityID: "App in Meeting Demo",
+                    entityID: "Meeting Transcript Bot",
                     contentUrl: `${window.location.origin}/appInMeeting`,
                     suggestedTabName: "App in meeting",
                     websiteUrl: `${window.location.origin}/appInMeeting`,
                 });
-
                 saveEvent.notifySuccess();
             });
+
+            microsoftTeams.pages.config.setValidityState(true);
         });
     }, []);
-
-    const onClick = () => {
-        microsoftTeams.pages.config.setValidityState(true);
-    }
 
     return (
         <header className="header">
             <div className="header-inner-container">
-                <div id="divConfig">
-                    <br />
-                    <input type="radio" name="notificationType" value="Create" onClick={onClick} /> Add App in a meeting
-                </div>
+                <h2>Meeting Transcript Bot</h2>
             </div>
         </header>
     );

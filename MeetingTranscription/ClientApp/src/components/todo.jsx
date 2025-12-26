@@ -119,7 +119,7 @@ const Todo = props => {
                 height: 250,
                 width: 250,
             },
-            url: `${window.location.origin}/home`,
+            url: `${window.location.origin}/task`,
         };
 
         microsoftTeams.app.getContext().then((context) => {
@@ -153,7 +153,7 @@ const Todo = props => {
                 To Do
             </div>
             <button onClick={() => { openTaskModule('todo') }} className="add-card-button">
-                <img className="add-icon" src="/add_icon.svg" title="Click to continue existing conversation" />
+                <img alt="" className="add-icon" src="/add_icon.svg" title="Click to continue existing conversation" />
             </button>
             <br />
             <button onClick={() => { props.shareSpecificAppContent('todo') }} className="share-specific-part-button">
