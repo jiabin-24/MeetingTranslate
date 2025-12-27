@@ -36,7 +36,12 @@ namespace EchoBot.Controllers
         [Route(HttpRouteConstants.OnIncomingRequestRoute)]
         public async Task<HttpResponseMessage> OnIncomingRequestAsync()
         {
-            _logger.LogInformation(JsonConvert.SerializeObject(this.Request));
+            _logger.LogInformation(JsonConvert.SerializeObject(this.Request), new JsonSerializerSettings
+            {
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,   // 忽略循环
+                NullValueHandling = NullValueHandling.Ignore,           // 可选：忽略 null
+                Formatting = Formatting.None                             // 或 Indented 美化
+            });
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
             return await _botService.Client.ProcessNotificationAsync(httpRequestMessage).ConfigureAwait(false);
         }
@@ -49,7 +54,12 @@ namespace EchoBot.Controllers
         [Route(HttpRouteConstants.OnNotificationRequestRoute)]
         public async Task<HttpResponseMessage> OnNotificationRequestAsync()
         {
-            _logger.LogInformation(JsonConvert.SerializeObject(this.Request));
+            _logger.LogInformation(JsonConvert.SerializeObject(this.Request), new JsonSerializerSettings
+            {
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,   // 忽略循环
+                NullValueHandling = NullValueHandling.Ignore,           // 可选：忽略 null
+                Formatting = Formatting.None                             // 或 Indented 美化
+            });
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
 
             // Pass the incoming notification to the sdk. The sdk takes care of what to do with it.
