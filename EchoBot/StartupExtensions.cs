@@ -48,6 +48,13 @@ namespace EchoBot
                         listenOptions.ServerCertificate = Utilities.GetCertificateFromStore(appSettings.CertificateThumbprint);
                     });
                 });
+
+                app.Services.PostConfigure<AppSettings>(options =>
+                {
+                    options.BotInstanceExternalPort = 443;
+                    options.MediaInstanceExternalPort = 443;
+
+                });
             }
         }
 
