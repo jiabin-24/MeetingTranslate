@@ -5,6 +5,7 @@
 using MeetingTranscription.Helpers;
 using MeetingTranscription.Models.Configuration;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
@@ -25,11 +26,11 @@ namespace MeetingTranscription.Controllers
         /// </summary>
         private readonly GraphHelper graphHelper;
 
-        public HomeController (ConcurrentDictionary<string, string> transcriptsDictionary, IOptions<AzureSettings> azureSettings)
+        public HomeController(ConcurrentDictionary<string, string> transcriptsDictionary, IOptions<AzureSettings> azureSettings, ILogger<HomeController> logger)
         {
             this.transcriptsDictionary = transcriptsDictionary;
             this.azureSettings = azureSettings;
-            graphHelper = new(azureSettings);
+            graphHelper = new(azureSettings, logger);
         }
 
         /// <summary>
