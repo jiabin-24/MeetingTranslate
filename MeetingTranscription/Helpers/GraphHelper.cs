@@ -4,21 +4,20 @@
 
 namespace MeetingTranscription.Helpers
 {
+    using MeetingTranscription.Models;
+    using MeetingTranscription.Models.Configuration;
+    using Microsoft.Bot.Builder;
+    using Microsoft.Bot.Builder.Teams;
+    using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
     using Microsoft.Identity.Client;
-    using MeetingTranscription.Models.Configuration;
+    using Newtonsoft.Json.Linq;
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Net.Http;
     using System.Net.Http.Headers;
     using System.Threading.Tasks;
-    using System.Net.Http;
-    using MeetingTranscription.Models;
-    using Newtonsoft.Json.Linq;
-    using Microsoft.Bot.Builder;
-    using Microsoft.Bot.Builder.Teams;
-    using Microsoft.Bot.Schema.Teams;
-    using Microsoft.Bot.Schema;
 
     public class GraphHelper
     {
@@ -32,9 +31,12 @@ namespace MeetingTranscription.Helpers
         /// </summary>
         private static readonly Dictionary<string, string> UserCache = new Dictionary<string, string>();
 
-        public GraphHelper(IOptions<AzureSettings> azureSettings)
+        private static ILogger _logger;
+
+        public GraphHelper(IOptions<AzureSettings> azureSettings, ILogger logger)
         {
             this.azureSettings = azureSettings;
+            _logger = logger;
         }
 
         /// <summary>
@@ -62,14 +64,14 @@ namespace MeetingTranscription.Helpers
         /// <param name="meetingId">Meeting ID.</param>
         /// <param name="userId">User ID who has access to the meeting.</param>
         /// <returns>Meeting transcripts.</returns>
-        public async Task<string> GetMeetingTranscriptionsAsync(string meetingId, string userId=null)
+        public async Task<string> GetMeetingTranscriptionsAsync(string meetingId, string userId = null)
         {
             try
             {
                 string accessToken = await GetToken();
-                
-                Console.WriteLine($"Attempting to get transcripts for meeting {meetingId} using user {userId}");
-                
+
+                _logger.LogInformation($"Attempting to get transcripts for meeting {meetingId} using user {userId}");
+
                 var getAllTranscriptsEndpoint = $"{this.azureSettings.Value.GraphApiEndpoint}/users/{userId}/onlineMeetings/{meetingId}/transcripts";
                 var getAllTranscriptReq = new HttpRequestMessage(HttpMethod.Get, getAllTranscriptsEndpoint);
                 getAllTranscriptReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
@@ -80,7 +82,7 @@ namespace MeetingTranscription.Helpers
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Failed to get transcripts: {response.StatusCode} - {errorContent}");
+                    _logger.LogInformation($"Failed to get transcripts: {response.StatusCode} - {errorContent}");
                     return string.Empty;
                 }
 
@@ -99,24 +101,24 @@ namespace MeetingTranscription.Helpers
                     if (transcriptResponse.IsSuccessStatusCode)
                     {
                         var transcriptContent = await transcriptResponse.Content.ReadAsStringAsync();
-                        Console.WriteLine($"Successfully retrieved transcript content ({transcriptContent.Length} characters)");
+                        _logger.LogInformation($"Successfully retrieved transcript content ({transcriptContent.Length} characters)");
                         return transcriptContent;
                     }
                     else
                     {
-                        Console.WriteLine($"Failed to get transcript content: {transcriptResponse.StatusCode}");
+                        _logger.LogInformation($"Failed to get transcript content: {transcriptResponse.StatusCode}");
                         return string.Empty;
                     }
                 }
                 else
                 {
-                    Console.WriteLine("No transcripts found for this meeting.");
+                    _logger.LogInformation("No transcripts found for this meeting.");
                     return string.Empty;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting transcripts: {ex.Message}");
+                _logger.LogError($"Error getting transcripts: {ex.Message}");
                 throw;
             }
         }
@@ -131,30 +133,30 @@ namespace MeetingTranscription.Helpers
         {
             try
             {
-                Console.WriteLine("Getting meeting organizer from Teams context...");
+                _logger.LogInformation("Getting meeting organizer from Teams context...");
 
                 // Get meeting information from Teams context
                 var meetingInfo = await TeamsInfo.GetMeetingInfoAsync(turnContext);
                 if (meetingInfo?.Organizer != null)
                 {
                     var organizerAadId = meetingInfo.Organizer.AadObjectId;
-                    Console.WriteLine($"Found meeting organizer from meeting info: {organizerAadId}");
+                    _logger.LogInformation($"Found meeting organizer from meeting info: {organizerAadId}");
                     return organizerAadId;
                 }
 
                 // Last fallback: use the current user from turn context
                 if (turnContext.Activity?.From?.AadObjectId != null)
                 {
-                    Console.WriteLine($"Using current user as fallback organizer: {turnContext.Activity.From.AadObjectId}");
+                    _logger.LogInformation($"Using current user as fallback organizer: {turnContext.Activity.From.AadObjectId}");
                     return turnContext.Activity.From.AadObjectId;
                 }
 
-                Console.WriteLine("No meeting organizer found from Teams context");
+                _logger.LogInformation("No meeting organizer found from Teams context");
                 return string.Empty;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting meeting organizer from Teams context: {ex.Message}");
+                _logger.LogError($"Error getting meeting organizer from Teams context: {ex.Message}");
                 return string.Empty;
             }
         }

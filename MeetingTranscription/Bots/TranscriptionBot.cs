@@ -11,11 +11,11 @@ using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Teams;
 using Microsoft.Bot.Schema;
 using Microsoft.Bot.Schema.Teams;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,6 +56,8 @@ namespace MeetingTranscription.Bots
         /// </summary>
         private readonly IBotService _botService;
 
+        private readonly ILogger _logger;
+
         /// <summary>
         /// Creates bot instance.
         /// </summary>
@@ -63,13 +65,15 @@ namespace MeetingTranscription.Bots
         /// <param name="transcriptsDictionary">Store details of meeting transcript.</param>
         /// <param name="cardFactory">Instance of card factory to create adaptive cards.</param>
         /// <param name="botService">Join bot service</param>
-        public TranscriptionBot(IOptions<AzureSettings> azureSettings, ConcurrentDictionary<string, string> transcriptsDictionary, ICardFactory cardFactory, IBotService botService)
+        public TranscriptionBot(IOptions<AzureSettings> azureSettings, ConcurrentDictionary<string, string> transcriptsDictionary,
+            ICardFactory cardFactory, IBotService botService, ILogger<TranscriptionBot> logger)
         {
             this.transcriptsDictionary = transcriptsDictionary;
             this.azureSettings = azureSettings;
-            graphHelper = new GraphHelper(azureSettings);
+            graphHelper = new GraphHelper(azureSettings, logger);
             this.cardFactory = cardFactory;
             this._botService = botService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -111,7 +115,7 @@ namespace MeetingTranscription.Bots
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in OnTeamsMeetingStartAsync: {ex.Message}");
+                _logger.LogError($"Error in OnTeamsMeetingStartAsync: {ex.Message}");
             }
         }
 
@@ -128,7 +132,7 @@ namespace MeetingTranscription.Bots
             try
             {
                 var meetingInfo = await TeamsInfo.GetMeetingInfoAsync(turnContext);
-                Console.WriteLine($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
+                _logger.LogInformation($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
                 // End the bot's call in the meeting
                 if (_botMeetingsDictionary.TryRemove(meeting.Id, out var threadId))
@@ -140,7 +144,7 @@ namespace MeetingTranscription.Bots
                 var organizerId = await graphHelper.GetMeetingOrganizerFromTeamsContextAsync(turnContext);
                 if (!string.IsNullOrEmpty(organizerId))
                 {
-                    Console.WriteLine($"Meeting organizer identified: {organizerId}");
+                    _logger.LogInformation($"Meeting organizer identified: {organizerId}");
                 }
 
                 // NEW: Use Teams context to find organizer and get transcripts
@@ -153,19 +157,19 @@ namespace MeetingTranscription.Bots
                     var attachment = this.cardFactory.CreateAdaptiveCardAttachement(new { MeetingId = meetingInfo.Details.MsGraphResourceId });
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
 
-                    Console.WriteLine($"Successfully retrieved and cached meeting transcript for {meetingInfo.Details.MsGraphResourceId}");
+                    _logger.LogInformation($"Successfully retrieved and cached meeting transcript for {meetingInfo.Details.MsGraphResourceId}");
                 }
                 else
                 {
                     var attachment = this.cardFactory.CreateNotFoundCardAttachement();
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
 
-                    Console.WriteLine($"No transcript found for meeting {meetingInfo.Details.MsGraphResourceId}");
+                    _logger.LogInformation($"No transcript found for meeting {meetingInfo.Details.MsGraphResourceId}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
+                _logger.LogInformation($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
 
                 // Send error card to user
                 var errorAttachment = this.cardFactory.CreateNotFoundCardAttachement();
@@ -204,7 +208,7 @@ namespace MeetingTranscription.Bots
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in OnTeamsTaskModuleFetchAsync: {ex.Message}");
+                _logger.LogError($"Error in OnTeamsTaskModuleFetchAsync: {ex.Message}");
 
                 return new TaskModuleResponse
                 {
