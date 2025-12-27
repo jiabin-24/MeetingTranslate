@@ -30,10 +30,7 @@ static class Program
         builder.Services.AddHttpClient().AddControllers().AddNewtonsoftJson();
 
         // The following line enables Application Insights telemetry collection.
-        builder.Services.AddApplicationInsightsTelemetry(option =>
-        {
-            option.ConnectionString = builder.Configuration.GetValue<string>("ApplicationInsights:ConnectionString");
-        });
+        builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
         builder.Logging.AddApplicationInsights();
 
         // Creates Singleton Card Factory.

@@ -4,6 +4,7 @@ using EchoBot.Util;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Client;
+using Newtonsoft.Json;
 
 namespace EchoBot.Controllers
 {
@@ -35,6 +36,7 @@ namespace EchoBot.Controllers
         [Route(HttpRouteConstants.OnIncomingRequestRoute)]
         public async Task<HttpResponseMessage> OnIncomingRequestAsync()
         {
+            _logger.LogInformation(JsonConvert.SerializeObject(this.Request));
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
             return await _botService.Client.ProcessNotificationAsync(httpRequestMessage).ConfigureAwait(false);
         }
@@ -47,6 +49,7 @@ namespace EchoBot.Controllers
         [Route(HttpRouteConstants.OnNotificationRequestRoute)]
         public async Task<HttpResponseMessage> OnNotificationRequestAsync()
         {
+            _logger.LogInformation(JsonConvert.SerializeObject(this.Request));
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
 
             // Pass the incoming notification to the sdk. The sdk takes care of what to do with it.
