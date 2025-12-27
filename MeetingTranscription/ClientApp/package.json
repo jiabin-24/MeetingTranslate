@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@fluidframework/test-client-utils": "~0.59.0",
+    "cross-env": "^10.1.0",
     "cross-spawn": "^7.0.3",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.3.0",
@@ -35,7 +36,7 @@
   },
   "scripts": {
     "clean": "npx shx rm -rf build",
-    "start": "react-scripts start",
+    "start": "cross-env HOST=0.0.0.0 react-scripts start",
     "start:client": "react-scripts start",
     "start:server": "npx @fluidframework/azure-local-service@latest",
     "build": "react-scripts build",

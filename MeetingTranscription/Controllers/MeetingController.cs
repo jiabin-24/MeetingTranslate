@@ -8,10 +8,11 @@ namespace MeetingTranscription.Controllers
     [Route("api/{controller}")]
     public class MeetingController : Controller
     {
-        private readonly TasksService _taskService;
-        public MeetingController(TasksService taskService)
+        private static TasksService _taskService = new TasksService();
+
+        public MeetingController()
         {
-            _taskService = taskService;
+
         }
 
         [Route("getMeetingData")]

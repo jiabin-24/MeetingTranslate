@@ -6,6 +6,7 @@ using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
@@ -82,11 +83,11 @@ static class Program
         app.UseSpa(spa =>
         {
             spa.Options.SourcePath = "ClientApp";
-            //if (app.Environment.IsDevelopment())
-            //{
-            //    spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
-            //    spa.UseReactDevelopmentServer(npmScript: "start");
-            //}
+            if (app.Environment.IsDevelopment())
+            {
+                spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
+                spa.UseReactDevelopmentServer(npmScript: "start");
+            }
         });
 
         app.Run();
