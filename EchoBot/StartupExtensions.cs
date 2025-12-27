@@ -52,8 +52,6 @@ namespace EchoBot
                 app.Services.PostConfigure<AppSettings>(options =>
                 {
                     options.BotInstanceExternalPort = 443;
-                    options.MediaInstanceExternalPort = 443;
-
                 });
             }
         }
