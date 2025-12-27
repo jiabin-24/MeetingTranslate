@@ -1,4 +1,5 @@
-﻿using DotNetEnv.Configuration;
+﻿using Azure.Identity;
+using DotNetEnv.Configuration;
 using EchoBot;
 using MeetingTranscription;
 using MeetingTranscription.Bots;
@@ -98,6 +99,8 @@ static class Program
         // Load the configuration from the .env file in development environment
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
+        else
+            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential());
 
         // Add Environment Variables
         builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
