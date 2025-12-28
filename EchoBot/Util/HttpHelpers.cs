@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
 
 namespace EchoBot.Util
 {
@@ -13,7 +14,10 @@ namespace EchoBot.Util
                 .SetContentType(req);
 
         private static HttpRequestMessage SetAbsoluteUri(this HttpRequestMessage msg, HttpRequest req)
-            => msg.Set(m => m.RequestUri = new UriBuilder
+        {
+            Console.WriteLine($"schema: {req.Scheme}, host: {JsonConvert.SerializeObject(req.Host)}, path: {req.PathBase}, path2: {req.Path}, Query: {req.QueryString}");
+
+            return msg.Set(m => m.RequestUri = new UriBuilder
             {
                 Scheme = req.Scheme,
                 Host = req.Host.Host,
@@ -21,6 +25,7 @@ namespace EchoBot.Util
                 Path = req.PathBase.Add(req.Path),
                 Query = req.QueryString.ToString()
             }.Uri);
+        }
 
         private static HttpRequestMessage SetMethod(this HttpRequestMessage msg, HttpRequest req)
             => msg.Set(m => m.Method = new HttpMethod(req.Method));
