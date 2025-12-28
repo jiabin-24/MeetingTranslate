@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Http;
-using Newtonsoft.Json;
 
 namespace EchoBot.Util
 {
@@ -15,13 +14,11 @@ namespace EchoBot.Util
 
         private static HttpRequestMessage SetAbsoluteUri(this HttpRequestMessage msg, HttpRequest req)
         {
-            Console.WriteLine($"schema: {req.Scheme}, host: {JsonConvert.SerializeObject(req.Host)}, path: {req.PathBase}, path2: {req.Path}, Query: {req.QueryString}");
-
             return msg.Set(m => m.RequestUri = new UriBuilder
             {
                 Scheme = req.Scheme,
                 Host = req.Host.Host,
-                Port = req.Host.Port!.Value,
+                Port = req.Host.Port == null ? ("https".Equals(req.Scheme) ? 443 : 80) : req.Host.Port.Value,
                 Path = req.PathBase.Add(req.Path),
                 Query = req.QueryString.ToString()
             }.Uri);
