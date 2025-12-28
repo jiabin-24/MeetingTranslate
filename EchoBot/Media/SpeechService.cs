@@ -1,4 +1,5 @@
-﻿using Microsoft.CognitiveServices.Speech;
+﻿using EchoBot.Util;
+using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.Skype.Bots.Media;
 using System.Runtime.InteropServices;
@@ -14,6 +15,7 @@ namespace EchoBot.Media
         /// The is the indicator if the media stream is running
         /// </summary>
         private bool _isRunning = false;
+
         /// <summary>
         /// The is draining indicator
         /// </summary>
@@ -29,6 +31,7 @@ namespace EchoBot.Media
         private readonly SpeechConfig _speechConfig;
         private SpeechRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
+        private readonly CaptionPublisher _wsPublisher;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
@@ -43,7 +46,7 @@ namespace EchoBot.Media
 
             var audioConfig = AudioConfig.FromStreamOutput(_audioOutputStream);
             _synthesizer = new SpeechSynthesizer(_speechConfig, audioConfig);
-
+            _wsPublisher = ServiceLocator.GetRequiredService<CaptionPublisher>();
         }
 
         /// <summary>
@@ -153,6 +156,7 @@ namespace EchoBot.Media
                         // We recognized the speech
                         // Now do Speech to Text
                         await TextToSpeech(e.Result.Text);
+                        await Transcript(e.Result.Text);
                     }
                     else if (e.Result.Reason == ResultReason.NoMatch)
                     {
@@ -226,6 +230,21 @@ namespace EchoBot.Media
                 };
                 OnSendMediaBufferEventArgs(this, args);
             }
+        }
+
+        private async Task Transcript(string text)
+        {
+            // send the transcript to the websocket clients
+            await _wsPublisher.PublishCaptionAsync(
+                meetingId: "demo-001",
+                text: text,
+                lang: "en",
+                targetLang: "zh",
+                isFinal: false,
+                speaker: "Bot",
+                startMs: 1000,
+                endMs: 1500
+            );
         }
     }
 }

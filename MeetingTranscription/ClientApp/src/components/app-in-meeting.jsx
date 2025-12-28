@@ -29,7 +29,7 @@ const AppInMeeting = props => {
 
     return (
         <div>
-            <h3>实时字幕</h3>
+            <h3 style={{marginTop: "0"}}>实时字幕</h3>
             <CaptionsPanel
                 url={wsUrl}
                 token={token}

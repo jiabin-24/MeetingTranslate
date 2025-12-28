@@ -1,6 +1,8 @@
 ﻿using Azure.Identity;
 using DotNetEnv.Configuration;
 using EchoBot;
+using EchoBot.Util;
+using EchoBot.WebSocket;
 using MeetingTranscription;
 using MeetingTranscription.Bots;
 using MeetingTranscription.Models.Configuration;
@@ -55,7 +57,7 @@ static class Program
         builder.RegisterBotServices();
 
         // WebSocket 相关服务
-        builder.Services.AddSingleton<EchoBot.WebSocket.CaptionHub>();
+        builder.Services.AddSingleton<CaptionHub>();
         builder.Services.AddSingleton<CaptionPublisher>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
@@ -67,6 +69,7 @@ static class Program
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage();
 
+        ServiceLocator.Initialize(app.Services);
         app.UseDefaultFiles()
             .UseStaticFiles()
             .UseWebSockets()
@@ -87,8 +90,8 @@ static class Program
             spa.Options.SourcePath = "ClientApp";
             if (app.Environment.IsDevelopment())
             {
-                spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
-                spa.UseReactDevelopmentServer(npmScript: "start");
+                //spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
+                //spa.UseReactDevelopmentServer(npmScript: "start");
             }
         });
         // WebSocket 端点（前端连接：wss://host:port/realtime）
