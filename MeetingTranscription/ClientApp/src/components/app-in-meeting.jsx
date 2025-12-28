@@ -24,11 +24,14 @@ const AppInMeeting = props => {
     const meetingId = 'demo-001';
     const targetLang = 'zh';
 
+    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
+
     return (
         <div>
             <h3>实时字幕</h3>
             <CaptionsPanel
-                url="wss://localhost:9441/realtime"  // 生产改 wss://
+                url={wsUrl}
                 token={token}
                 meetingId={meetingId}
                 targetLang={targetLang}
