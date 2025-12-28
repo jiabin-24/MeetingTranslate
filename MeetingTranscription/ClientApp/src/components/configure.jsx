@@ -1,8 +1,3 @@
-// <copyright file="configure.tsx" company="Microsoft Corporation">
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
-// </copyright>
-
 import React, { useEffect } from "react";
 import * as microsoftTeams from "@microsoft/teams-js";
 

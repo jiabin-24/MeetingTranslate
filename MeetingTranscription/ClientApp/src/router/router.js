@@ -7,8 +7,6 @@ import {
 } from 'react-router-dom';
 import AppInMeeting from "../components/app-in-meeting";
 import Configure from "../components/configure";
-import Todo from "../components/todo";
-import Home from "../components/home";
 
 export const AppRoute = () => {
     React.useEffect(() => {
@@ -23,15 +21,11 @@ export const AppRoute = () => {
     }, []);
 
     return (
-        <React.Fragment>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/configure" element={<Configure />} />
-                    <Route path="/appInMeeting" element={<AppInMeeting />} />
-                    <Route path="/todoView" element={<Todo shareSpecificAppContent={(meetingStatus) => { }} />} />
-                    <Route path="/task" element= { <Home /> }/>
-                </Routes>
-            </BrowserRouter>
-        </React.Fragment>
+        <BrowserRouter>
+            <Routes>
+                <Route path="/configure" element={<Configure />} />
+                <Route path="/appInMeeting" element={<AppInMeeting />} />
+            </Routes>
+        </BrowserRouter>
     );
 };

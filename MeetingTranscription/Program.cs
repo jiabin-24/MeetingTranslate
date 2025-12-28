@@ -7,6 +7,7 @@ using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
@@ -53,6 +54,10 @@ static class Program
 
         builder.RegisterBotServices();
 
+        // WebSocket 相关服务
+        builder.Services.AddSingleton<EchoBot.WebSocket.CaptionHub>();
+        builder.Services.AddSingleton<CaptionPublisher>();
+
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
         builder.Services.AddMvc().AddSessionStateTempDataProvider();
@@ -60,9 +65,7 @@ static class Program
         var app = builder.Build();
 
         if (app.Environment.IsDevelopment())
-        {
             app.UseDeveloperExceptionPage();
-        }
 
         app.UseDefaultFiles()
             .UseStaticFiles()
@@ -78,6 +81,7 @@ static class Program
             });
         app.UseBotServices();
         app.UseSpaStaticFiles();
+        app.UseWebSockets();
         app.UseSpa(spa =>
         {
             spa.Options.SourcePath = "ClientApp";
@@ -86,6 +90,28 @@ static class Program
                 spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
                 spa.UseReactDevelopmentServer(npmScript: "start");
             }
+        });
+        // WebSocket 端点（前端连接：wss://host:port/realtime）
+        app.Map("/realtime", async ctx =>
+        {
+            var hub = ctx.RequestServices.GetRequiredService<CaptionHub>();
+            await hub.HandleAsync(ctx);
+        });
+
+        // （可选）一个简单的 HTTP 接口，用于本地测试广播（不接 ASR/翻译也能验证前端）
+        app.MapPost("/test/publish", async (CaptionPublisher publisher, TestBody body) =>
+        {
+            await publisher.PublishCaptionAsync(
+                meetingId: body.MeetingId,
+                text: body.Text,
+                lang: body.Lang,
+                targetLang: body.TargetLang,
+                isFinal: body.IsFinal,
+                startMs: body.StartMs,
+                endMs: body.EndMs,
+                speaker: body.Speaker
+            );
+            return Results.Ok(new { ok = true });
         });
 
         app.Run();
@@ -116,4 +142,15 @@ static class Program
                 throw new ArgumentException("MicrosoftAppPassword is null or empty. Please check your configuration.");
         });
     }
+
+    public record TestBody(
+        string MeetingId,
+        string Text,
+        string Lang,
+        string TargetLang,
+        bool IsFinal,
+        long? StartMs,
+        long? EndMs,
+        string? Speaker
+    );
 }
