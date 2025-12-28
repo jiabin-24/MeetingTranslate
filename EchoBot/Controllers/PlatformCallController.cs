@@ -40,7 +40,8 @@ namespace EchoBot.Controllers
             {
                 ReferenceLoopHandling = ReferenceLoopHandling.Ignore,   // 忽略循环
                 NullValueHandling = NullValueHandling.Ignore,           // 可选：忽略 null
-                Formatting = Formatting.None                             // 或 Indented 美化
+                Formatting = Formatting.None,                             // 或 Indented 美化
+                MaxDepth = 5
             });
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
             return await _botService.Client.ProcessNotificationAsync(httpRequestMessage).ConfigureAwait(false);
@@ -58,7 +59,8 @@ namespace EchoBot.Controllers
             {
                 ReferenceLoopHandling = ReferenceLoopHandling.Ignore,   // 忽略循环
                 NullValueHandling = NullValueHandling.Ignore,           // 可选：忽略 null
-                Formatting = Formatting.None                             // 或 Indented 美化
+                Formatting = Formatting.None,                             // 或 Indented 美化
+                MaxDepth = 5
             });
             var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
 
