@@ -1,6 +1,7 @@
 ﻿using EchoBot.Util;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
+using Microsoft.CognitiveServices.Speech.Translation;
 using Microsoft.Skype.Bots.Media;
 using System.Runtime.InteropServices;
 
@@ -28,8 +29,8 @@ namespace EchoBot.Media
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
-        private readonly SpeechConfig _speechConfig;
-        private SpeechRecognizer _recognizer;
+        private readonly SpeechTranslationConfig _speechConfig;
+        private TranslationRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
         private readonly CaptionPublisher _wsPublisher;
 
@@ -40,9 +41,10 @@ namespace EchoBot.Media
         {
             _logger = logger;
 
-            _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
-            _speechConfig.SpeechSynthesisLanguage = settings.BotLanguage;
-            _speechConfig.SpeechRecognitionLanguage = settings.BotLanguage;
+            _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
+            // 添加目标语言
+            _speechConfig.AddTargetLanguage("en");
+            _speechConfig.AddTargetLanguage("zh");
 
             var audioConfig = AudioConfig.FromStreamOutput(_audioOutputStream);
             _synthesizer = new SpeechSynthesizer(_speechConfig, audioConfig);
@@ -136,7 +138,12 @@ namespace EchoBot.Media
                     if (_recognizer == null)
                     {
                         _logger.LogInformation("init recognizer");
-                        _recognizer = new SpeechRecognizer(_speechConfig, audioInput);
+
+                        // 提供要“自动检测”的候选语言数组（最多 ~10 个，建议 2-3 个常见语言）
+                        var autoDetect = AutoDetectSourceLanguageConfig.FromLanguages(
+                            new[] { "zh-CN", "en-US" }
+                        );
+                        _recognizer = new TranslationRecognizer(_speechConfig, autoDetect, audioInput);
                     }
                 }
 
@@ -147,16 +154,20 @@ namespace EchoBot.Media
 
                 _recognizer.Recognized += async (s, e) =>
                 {
-                    if (e.Result.Reason == ResultReason.RecognizedSpeech)
+                    if (e.Result.Reason == ResultReason.TranslatedSpeech)
                     {
                         if (string.IsNullOrEmpty(e.Result.Text))
                             return;
 
                         _logger.LogInformation($"RECOGNIZED: Text={e.Result.Text}");
+
+                        var original = e.Result.Text;                  // 原文
+                        var translated = e.Result.Translations["en"];  // 翻译文本
+
                         // We recognized the speech
                         // Now do Speech to Text
-                        await TextToSpeech(e.Result.Text);
-                        await Transcript(e.Result.Text);
+                        await TextToSpeech(translated);
+                        await Transcript(translated);
                     }
                     else if (e.Result.Reason == ResultReason.NoMatch)
                     {

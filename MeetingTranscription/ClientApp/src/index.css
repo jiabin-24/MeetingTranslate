@@ -1,6 +1,6 @@
 
 .captions {
-  height: 400px;
+  height: 600px;
   overflow-y: auto;
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
         Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -12,3 +12,15 @@
 .line { padding: 2px 4px; }
 .final { color: #222; }
 .partial { color: #666; }
+
+.language-switcher {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 10px 0;
+}
+
+.language-switcher select {
+  padding: 4px;
+}

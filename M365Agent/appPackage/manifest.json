@@ -49,14 +49,13 @@
   "configurableTabs": [
     {
       "configurationUrl": "https://${{BOT_DOMAIN}}/configure",
-      "canUpdateConfiguration": true,
+      "canUpdateConfiguration": false,
       "scopes": [
         "team",
         "groupChat"
       ],
       "context": [
-        "meetingSidePanel",
-        "meetingStage"
+        "meetingSidePanel"
       ]
     }
   ],
