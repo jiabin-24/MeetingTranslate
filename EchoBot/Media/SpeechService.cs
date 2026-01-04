@@ -26,6 +26,7 @@ namespace EchoBot.Media
         /// The logger
         /// </summary>
         private readonly ILogger _logger;
+        private readonly AppSettings _appSettings;
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
@@ -40,14 +41,20 @@ namespace EchoBot.Media
         public SpeechService(AppSettings settings, ILogger logger)
         {
             _logger = logger;
-
             _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
-            // 添加目标语言
-            _speechConfig.AddTargetLanguage("en");
-            _speechConfig.AddTargetLanguage("zh");
+            _appSettings = settings;
 
-            var audioConfig = AudioConfig.FromStreamOutput(_audioOutputStream);
-            _synthesizer = new SpeechSynthesizer(_speechConfig, audioConfig);
+            // 添加目标语言
+            settings.TargetLanguages.ForEach(lang => _speechConfig.AddTargetLanguage(lang));
+            // 提升识别准确率
+            _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy");
+            _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced");
+            _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText");
+            _speechConfig.SetProperty("SpeechServiceConnection_InitialSilenceTimeoutMs", "7000");
+            _speechConfig.SetProperty("SpeechServiceConnection_EndSilenceTimeoutMs", "2000");
+            _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "true");
+
+            _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _wsPublisher = ServiceLocator.GetRequiredService<CaptionPublisher>();
         }
 
@@ -140,9 +147,7 @@ namespace EchoBot.Media
                         _logger.LogInformation("init recognizer");
 
                         // 提供要“自动检测”的候选语言数组（最多 ~10 个，建议 2-3 个常见语言）
-                        var autoDetect = AutoDetectSourceLanguageConfig.FromLanguages(
-                            new[] { "zh-CN", "en-US" }
-                        );
+                        var autoDetect = AutoDetectSourceLanguageConfig.FromLanguages(_appSettings.SourceLanguages);
                         _recognizer = new TranslationRecognizer(_speechConfig, autoDetect, audioInput);
                     }
                 }

@@ -62,10 +62,14 @@ namespace EchoBot
         public string SpeechConfigRegion { get; set; }
 
         /// <summary>
-        /// Gets or sets the Speech Service Bot language
-        /// that it will use for speech-to-text and text-to-speech
+        /// Target languages for translation
         /// </summary>
-        public string BotLanguage { get; set; }
+        public List<string> TargetLanguages { get; set; }
+
+        /// <summary>
+        /// Gets or sets the list of supported source language codes.
+        /// </summary>
+        public string[] SourceLanguages { get; set; }
 
         // set by dsc script
 
