@@ -9,7 +9,6 @@ using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
@@ -77,12 +76,23 @@ static class Program
             options.ClientName = redisConfig["InstanceName"];
             return ConnectionMultiplexer.Connect(options);
         });
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("DevCors", builder =>
+            {
+                builder.WithOrigins("https://teams.microsoft.com", "https://localhost:3000")
+                       .AllowAnyHeader()
+                       .AllowAnyMethod()
+                       .AllowCredentials();
+            });
+        });
 
         var app = builder.Build();
 
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage();
 
+        app.UseCors("DevCors");
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.UseWebSockets();
@@ -105,27 +115,11 @@ static class Program
             }
         });
         ServiceLocator.Initialize(app.Services);
-        // WebSocket 端点（前端连接：wss://host:port/realtime）
         app.Map("/realtime", async ctx =>
         {
+            // WebSocket 端点（前端连接：wss://host:port/realtime）
             var hub = ctx.RequestServices.GetRequiredService<CaptionHub>();
             await hub.HandleAsync(ctx);
-        });
-
-        // （可选）一个简单的 HTTP 接口，用于本地测试广播（不接 ASR/翻译也能验证前端）
-        app.MapPost("/test/publish", async (CaptionPublisher publisher, TestBody body) =>
-        {
-            await publisher.PublishCaptionAsync(
-                meetingId: body.MeetingId,
-                text: body.Text,
-                lang: body.Lang,
-                targetLang: body.TargetLang,
-                isFinal: body.IsFinal,
-                startMs: body.StartMs,
-                endMs: body.EndMs,
-                speaker: body.Speaker
-            );
-            return Results.Ok(new { ok = true });
         });
 
         app.Run();
@@ -156,15 +150,4 @@ static class Program
                 throw new ArgumentException("MicrosoftAppPassword is null or empty. Please check your configuration.");
         });
     }
-
-    public record TestBody(
-        string MeetingId,
-        string Text,
-        string Lang,
-        string TargetLang,
-        bool IsFinal,
-        long? StartMs,
-        long? EndMs,
-        string? Speaker
-    );
 }

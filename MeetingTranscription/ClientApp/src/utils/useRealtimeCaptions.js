@@ -8,6 +8,28 @@ export function useRealtimeCaptions(opts) {
     const backoffRef = useRef(1000); // 指数退避起始 1s
 
     useEffect(() => {
+        let abort = false;
+        // Fetch initial captions over HTTP when meetingId is available
+        if (opts.meetingId) {
+            (async () => {
+                try {
+                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    if (abort) return;
+                    // Expect data to be an array of caption objects; normalize keys if needed
+                    if (Array.isArray(data)) {
+                        // Replace local lines with server-provided initial captions.
+                        // This prevents duplicates when switching targetLang which
+                        // would otherwise re-fetch and merge the same items.
+                        setLines(() => sortByTime(data));
+                    }
+                } catch (e) {
+                    // ignore fetch errors
+                }
+            })();
+        }
         let closed = false;
 
         const connect = () => {
@@ -49,7 +71,7 @@ export function useRealtimeCaptions(opts) {
 
                 try {
                     const msg = JSON.parse(data);
-                    if (msg && msg.Type === 'caption') {
+                    if (msg && msg.type === 'caption') {
                         setLines(prev => mergeCaptions(prev, msg));
                     }
                 } catch {
@@ -76,6 +98,7 @@ export function useRealtimeCaptions(opts) {
 
         return () => {
             closed = true;
+            abort = true;
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
                 wsRef.current.close();
             }
@@ -83,10 +106,9 @@ export function useRealtimeCaptions(opts) {
                 window.clearTimeout(reconnectRef.current);
             }
         };
-    }, [opts.url, opts.token, opts.meetingId, opts.targetLang]);
+    }, [opts.url, opts.token, opts.meetingId]);
 
     return { lines };
-
 }
 
 // 将 final 片段覆盖同时间窗的 partial，减少闪烁

@@ -173,18 +173,14 @@ namespace EchoBot.Media
                 {
                     if (e.Result.Reason == ResultReason.TranslatedSpeech)
                     {
-                        if (string.IsNullOrEmpty(e.Result.Text))
+                        var original = e.Result.Text; // 原文
+                        if (string.IsNullOrEmpty(original))
                             return;
 
-                        _logger.LogInformation($"RECOGNIZED: Text={e.Result.Text}");
+                        _logger.LogInformation($"Recognized: Text={original}");
 
-                        var original = e.Result.Text;                  // 原文
-                        var translated = e.Result.Translations["en"];  // 翻译文本
-
-                        // We recognized the speech
-                        // Now do Speech to Text
-                        await TextToSpeech(translated);
-                        await Transcript(translated);
+                        await TextToSpeech(e.Result.Translations);
+                        await Transcript(e.Result.Translations, e.Offset, e.Result.Duration);
                     }
                     else if (e.Result.Reason == ResultReason.NoMatch)
                     {
@@ -208,14 +204,13 @@ namespace EchoBot.Media
 
                 _recognizer.SessionStarted += async (s, e) =>
                 {
-                    _logger.LogInformation("\nSession started event.");
-                    await TextToSpeech("Hello");
+                    _logger.LogInformation("Session started event.");
                 };
 
                 _recognizer.SessionStopped += (s, e) =>
                 {
-                    _logger.LogInformation("\nSession stopped event.");
-                    _logger.LogInformation("\nStop recognition.");
+                    _logger.LogInformation("Session stopped event.");
+                    _logger.LogInformation("Stop recognition.");
                     stopRecognition.TrySetResult(0);
                 };
 
@@ -242,10 +237,10 @@ namespace EchoBot.Media
             _isDraining = false;
         }
 
-        private async Task TextToSpeech(string text)
+        private async Task TextToSpeech(IReadOnlyDictionary<string, string> captions)
         {
             // convert the text to speech
-            SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(text);
+            SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(captions["en"]);
             // take the stream of the result
             // create 20ms media buffers of the stream
             // and send to the AudioSocket in the BotMediaStream
@@ -260,23 +255,25 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task Transcript(string text)
+        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration)
         {
+            long startMs = (long)(offset / 10_000UL);                   // 1ms = 10,000 ticks
+            long endMs = startMs + (long)duration.TotalMilliseconds;
+
             // determine speaker label from active speakers if available
             string speakerLabel = "Bot";
             if (_activeSpeakers is { Length: > 0 })
-                speakerLabel = $"speaker-{_activeSpeakers[0]}";
+                speakerLabel = $"Speaker-{_activeSpeakers[0]}";
 
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: _threadId,
                 Speaker: speakerLabel,
                 Lang: "en",
-                TargetLang: "zh",
-                Text: text,
+                Text: captions.ToDictionary(),
                 IsFinal: false,
-                StartMs: 1000,
-                EndMs: 1500
+                StartMs: startMs,
+                EndMs: endMs
             );
 
             // send the transcript to the websocket clients

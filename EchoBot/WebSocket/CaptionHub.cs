@@ -124,11 +124,6 @@ namespace EchoBot.WebSocket
                 if (!meta.Authed) continue;
                 if (!string.Equals(meta.MeetingId, payload.MeetingId, StringComparison.Ordinal)) continue;
 
-                // 语言过滤（若服务端未预过滤）
-                if (meta.TargetLang is { } tl && payload.TargetLang is { } pl &&
-                    !string.Equals(tl, pl, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 try
                 {
                     await ws.SendAsync(data, WebSocketMessageType.Text, true, CancellationToken.None);

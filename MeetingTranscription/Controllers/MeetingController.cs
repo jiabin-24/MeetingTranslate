@@ -19,9 +19,9 @@ namespace MeetingTranscription.Controllers
         }
 
         [Route("getMeetingCaptions")]
-        public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string meetingId)
+        public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string threadId)
         {
-            var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{meetingId}"))
+            var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{threadId}"))
                 .Select(v => JsonConvert.DeserializeObject<CaptionPayload>((string)v)).ToList();
             return captions;
         }

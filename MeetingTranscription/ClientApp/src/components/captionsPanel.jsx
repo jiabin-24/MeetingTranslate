@@ -34,16 +34,22 @@ export default function CaptionsPanel(props) {
         });
     }, [(lines || []).length, autoScrollEnabled]);
 
-    return (
-        <div className="captions" ref={containerRef}>
-            {(lines || []).map((l, i) => (
-                <div
-                    key={`${l.StartMs}-${l.EndMs}-${i}`}
-                    className={l.IsFinal ? 'line final' : 'line partial'}
-                >
-                    {l.Speaker ? `[${l.Speaker}] ` : ''}{l.Text}
-                </div>
-            ))}
-        </div>
-    );
+        return (
+            <div className="captions" ref={containerRef}>
+                {(lines || []).map((l, i) => {
+                    const rawText = l.text ?? l.Text ?? '';
+                    const speaker = l.speaker ?? l.Speaker ?? '';
+                    let text = rawText[targetLang] ?? rawText.en ?? Object.values(rawText)[0] ?? '';
+
+                    return (
+                        <div
+                            key={`${l.startMs}-${l.endMs}-${i}`}
+                            className={l.isFinal ? 'line final' : 'line partial'}
+                        >
+                            {`[${speaker}] `}{text}
+                        </div>
+                    );
+                })}
+            </div>
+        );
 };

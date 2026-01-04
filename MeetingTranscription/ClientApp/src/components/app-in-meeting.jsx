@@ -9,7 +9,6 @@ const AppInMeeting = props => {
     useEffect(() => {
         microsoftTeams.app.initialize().then(() => {
             microsoftTeams.app.getContext().then((context) => {
-                console.log("Teams context:", context);
                 if (context && context.chat && context.chat.id) {
                     setMeetingId(context.chat.id);
                 }
@@ -22,8 +21,7 @@ const AppInMeeting = props => {
     const [targetLang, setTargetLang] = useState('zh');
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    //const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
-     const wsUrl = 'wss://localhost:9441/realtime';
+    const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
 
     return (
         <div className="captions-panel-container">

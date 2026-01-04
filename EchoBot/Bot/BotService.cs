@@ -1,6 +1,7 @@
 ﻿using EchoBot.Authentication;
 using EchoBot.Constants;
 using EchoBot.Models;
+using EchoBot.Util;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Graph.Communications.Calls;
@@ -9,12 +10,12 @@ using Microsoft.Graph.Communications.Client;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
+using Microsoft.Graph.Contracts;
+using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
+using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Net;
-using EchoBot.Util;
-using Microsoft.Graph.Models;
-using Microsoft.Graph.Contracts;
 
 namespace EchoBot.Bot
 {
@@ -59,6 +60,8 @@ namespace EchoBot.Bot
         /// <value>The client.</value>
         public ICommunicationsClient Client { get; private set; }
 
+        private readonly IConnectionMultiplexer _mux;
+
 
         /// <summary>
         /// Dispose of the call client
@@ -80,12 +83,14 @@ namespace EchoBot.Bot
             IGraphLogger graphLogger,
             ILogger<BotService> logger,
             IOptions<AppSettings> settings,
-            IBotMediaLogger mediaLogger)
+            IBotMediaLogger mediaLogger,
+            IConnectionMultiplexer mux)
         {
             _graphLogger = graphLogger;
             _logger = logger;
             _settings = settings.Value;
             _mediaPlatformLogger = mediaLogger;
+            _mux = mux;
         }
 
         /// <summary>
@@ -207,6 +212,7 @@ namespace EchoBot.Bot
                 var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
                 statefulCall.GraphLogger.Info($"Call creation complete: {statefulCall.Id}");
                 _logger.LogInformation($"Call creation complete: {statefulCall.Id}");
+                await _mux.GetDatabase().KeyDeleteAsync($"list:{joinParams.ChatInfo.ThreadId}");
                 return statefulCall;
             }
 
