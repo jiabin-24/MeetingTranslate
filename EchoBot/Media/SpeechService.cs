@@ -3,7 +3,10 @@ using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.CognitiveServices.Speech.Translation;
 using Microsoft.Skype.Bots.Media;
+using Newtonsoft.Json;
+using StackExchange.Redis;
 using System.Runtime.InteropServices;
+using static EchoBot.Models.Caption;
 
 namespace EchoBot.Media
 {
@@ -34,15 +37,19 @@ namespace EchoBot.Media
         private TranslationRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
         private readonly CaptionPublisher _wsPublisher;
+        private readonly IConnectionMultiplexer _mux;
+        private readonly string _threadId;
+        private uint[]? _activeSpeakers;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, ILogger logger)
+        public SpeechService(AppSettings settings, ILogger logger, string threadId = "")
         {
             _logger = logger;
             _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
             _appSettings = settings;
+            _threadId = threadId ?? string.Empty;
 
             // 添加目标语言
             settings.TargetLanguages.ForEach(lang => _speechConfig.AddTargetLanguage(lang));
@@ -56,6 +63,7 @@ namespace EchoBot.Media
 
             _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _wsPublisher = ServiceLocator.GetRequiredService<CaptionPublisher>();
+            _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 
         /// <summary>
@@ -64,6 +72,10 @@ namespace EchoBot.Media
         /// <param name="audioBuffer"></param>
         public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer)
         {
+            // remember active speakers from this buffer so we can attribute transcripts
+            if (audioBuffer.ActiveSpeakers != null && audioBuffer.ActiveSpeakers.Length > 0)
+                _activeSpeakers = audioBuffer.ActiveSpeakers;
+
             if (!_isRunning)
             {
                 Start();
@@ -250,17 +262,29 @@ namespace EchoBot.Media
 
         private async Task Transcript(string text)
         {
-            // send the transcript to the websocket clients
-            await _wsPublisher.PublishCaptionAsync(
-                meetingId: "demo-001",
-                text: text,
-                lang: "en",
-                targetLang: "zh",
-                isFinal: false,
-                speaker: "Bot",
-                startMs: 1000,
-                endMs: 1500
+            // determine speaker label from active speakers if available
+            string speakerLabel = "Bot";
+            if (_activeSpeakers is { Length: > 0 })
+                speakerLabel = $"speaker-{_activeSpeakers[0]}";
+
+            var payload = new CaptionPayload(
+                Type: "caption",
+                MeetingId: _threadId,
+                Speaker: speakerLabel,
+                Lang: "en",
+                TargetLang: "zh",
+                Text: text,
+                IsFinal: false,
+                StartMs: 1000,
+                EndMs: 1500
             );
+
+            // send the transcript to the websocket clients
+            await _wsPublisher.PublishCaptionAsync(payload);
+
+            var listKey = $"list:{_threadId}";
+            await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
+            await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
         }
     }
 }

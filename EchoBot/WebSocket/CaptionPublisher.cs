@@ -30,4 +30,9 @@ public class CaptionPublisher
 
         return _hub.BroadcastAsync(payload);
     }
+
+    public Task PublishCaptionAsync(CaptionPayload payload)
+    {
+        return _hub.BroadcastAsync(payload);
+    }
 }

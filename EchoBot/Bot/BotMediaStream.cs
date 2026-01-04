@@ -44,6 +44,7 @@ namespace EchoBot.Bot
         /// </summary>
         /// <param name="mediaSession">The media session.</param>
         /// <param name="callId">The call identity</param>
+        /// <param name="threadId">The thread identity</param>
         /// <param name="graphLogger">The Graph logger.</param>
         /// <param name="logger">The logger.</param>
         /// <param name="settings">Azure settings</param>
@@ -51,6 +52,7 @@ namespace EchoBot.Bot
         public BotMediaStream(
             ILocalMediaSession mediaSession,
             string callId,
+            string threadId,
             IGraphLogger graphLogger,
             ILogger logger,
             AppSettings settings
@@ -84,7 +86,7 @@ namespace EchoBot.Bot
 
             if (_settings.UseSpeechService)
             {
-                _languageService = new SpeechService(_settings, _logger);
+                _languageService = new SpeechService(_settings, _logger, threadId);
                 _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
             }
         }
@@ -231,6 +233,8 @@ namespace EchoBot.Bot
             this.audioMediaBuffers = e.AudioMediaBuffers;
             var result = Task.Run(async () => await this.audioVideoFramePlayer.EnqueueBuffersAsync(this.audioMediaBuffers, new List<VideoMediaBuffer>())).GetAwaiter();
         }
+
+        
     }
 }
 

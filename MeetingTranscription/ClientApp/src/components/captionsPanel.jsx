@@ -32,11 +32,11 @@ export default function CaptionsPanel(props) {
         requestAnimationFrame(() => {
             el.scrollTop = el.scrollHeight;
         });
-    }, [lines.length, autoScrollEnabled]);
+    }, [(lines || []).length, autoScrollEnabled]);
 
     return (
         <div className="captions" ref={containerRef}>
-            {lines.map((l, i) => (
+            {(lines || []).map((l, i) => (
                 <div
                     key={`${l.StartMs}-${l.EndMs}-${i}`}
                     className={l.IsFinal ? 'line final' : 'line partial'}

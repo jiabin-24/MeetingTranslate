@@ -10,7 +10,6 @@ using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
@@ -18,6 +17,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using System;
 using System.Collections.Concurrent;
 
@@ -64,27 +64,37 @@ static class Program
         builder.Services.AddTransient<IBot, TranscriptionBot>();
         builder.Services.AddMvc().AddSessionStateTempDataProvider();
 
+        // 分布式缓存
+        var redisConfig = builder.Configuration.GetSection("Redis");
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var options = ConfigurationOptions.Parse(redisConfig["Configuration"]!);
+            options.Password = redisConfig["Password"];
+            options.Ssl = true;
+            options.ReconnectRetryPolicy = new ExponentialRetry(5000); // 断线重连
+            options.ConnectTimeout = 5000;
+            options.SyncTimeout = 5000;
+            options.ClientName = redisConfig["InstanceName"];
+            return ConnectionMultiplexer.Connect(options);
+        });
+
         var app = builder.Build();
 
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage();
 
-        ServiceLocator.Initialize(app.Services);
-        app.UseDefaultFiles()
-            .UseStaticFiles()
-            .UseWebSockets()
-            .UseRouting()
-            .UseAuthorization()
-            .UseEndpoints(endpoints =>
-            {
-                endpoints.MapControllers();
-                endpoints.MapControllerRoute(
-                name: "default",
-                pattern: "{controller=Home}/{action=Index}/{id?}");
-            });
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+        app.UseWebSockets();
+        app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllers();
+            endpoints.MapControllerRoute(
+            name: "default",
+            pattern: "{controller=Home}/{action=Index}/{id?}");
+        });
         app.UseBotServices();
         app.UseSpaStaticFiles();
-        app.UseWebSockets();
         app.UseSpa(spa =>
         {
             spa.Options.SourcePath = "ClientApp";
@@ -94,6 +104,7 @@ static class Program
                 //spa.UseReactDevelopmentServer(npmScript: "start");
             }
         });
+        ServiceLocator.Initialize(app.Services);
         // WebSocket 端点（前端连接：wss://host:port/realtime）
         app.Map("/realtime", async ctx =>
         {

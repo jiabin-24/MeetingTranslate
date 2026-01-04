@@ -30,10 +30,12 @@ namespace EchoBot.Bot
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
         /// </summary>
         /// <param name="statefulCall">The stateful call.</param>
+        /// <param name="threadId">The thread identifier.</param>
         /// <param name="settings">The settings.</param>
         /// <param name="logger"></param>
         public CallHandler(
             ICall statefulCall,
+            string threadId,
             AppSettings settings,
             ILogger logger
         )
@@ -43,7 +45,7 @@ namespace EchoBot.Bot
             this.Call.OnUpdated += this.CallOnUpdated;
             this.Call.Participants.OnUpdated += this.ParticipantsOnUpdated;
 
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, this.GraphLogger, logger, settings);
+            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, threadId, this.GraphLogger, logger, settings);
         }
 
         /// <inheritdoc/>

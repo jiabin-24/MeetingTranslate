@@ -1,87 +1,29 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using System.Collections.Concurrent;
+using Newtonsoft.Json;
+using StackExchange.Redis;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Threading.Tasks;
+using static EchoBot.Models.Caption;
 
 namespace MeetingTranscription.Controllers
 {
     [Route("api/{controller}")]
     public class MeetingController : Controller
     {
-        private static TasksService _taskService = new TasksService();
+        private readonly IConnectionMultiplexer _mux;
 
-        public MeetingController()
+        public MeetingController(IConnectionMultiplexer mux)
         {
-
+            _mux = mux;
         }
 
-        [Route("getMeetingData")]
-        public IActionResult GetMeetingData([FromQuery] string meetingId, [FromQuery] string status)
+        [Route("getMeetingCaptions")]
+        public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string meetingId)
         {
-            var currentMeetingList = new List<TaskInfoModel>();
-
-            if (status == "todo")
-            {
-                _taskService.ToDoDictionary.TryGetValue(meetingId, out currentMeetingList);
-            }
-
-            if (currentMeetingList == null)
-            {
-                return this.Ok(new List<TaskInfoModel>());
-            }
-            else
-            {
-                return this.Ok(currentMeetingList);
-            }
+            var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{meetingId}"))
+                .Select(v => JsonConvert.DeserializeObject<CaptionPayload>((string)v)).ToList();
+            return captions;
         }
-
-        [Route("saveMeetingData")]
-        [HttpPost]
-        public IActionResult SaveMeetingData([FromQuery] string meetingId, [FromQuery] string status, [FromBody] TaskInfoModel taskInfo)
-        {
-            var currentMeetingList = new List<TaskInfoModel>();
-
-            if (status == "todo")
-            {
-                var isPresent = _taskService.ToDoDictionary.TryGetValue(meetingId, out currentMeetingList);
-                if (isPresent)
-                {
-                    currentMeetingList.Add(taskInfo);
-                }
-                else
-                {
-                    var newMeetingList = new List<TaskInfoModel> { taskInfo };
-                    _taskService.ToDoDictionary.AddOrUpdate(meetingId, newMeetingList, (key, newValue) => newMeetingList);
-                }
-            }
-
-            return this.Ok(currentMeetingList);
-        }
-    }
-
-    public class TasksService
-    {
-        private readonly ConcurrentDictionary<string, List<TaskInfoModel>> todoDictionary
-        = new ConcurrentDictionary<string, List<TaskInfoModel>>();
-
-        private readonly ConcurrentDictionary<string, List<TaskInfoModel>> doingDictionary
-        = new ConcurrentDictionary<string, List<TaskInfoModel>>();
-
-        private readonly ConcurrentDictionary<string, List<TaskInfoModel>> doneDictionary
-        = new ConcurrentDictionary<string, List<TaskInfoModel>>();
-
-        public ConcurrentDictionary<string, List<TaskInfoModel>> ToDoDictionary => todoDictionary;
-        public ConcurrentDictionary<string, List<TaskInfoModel>> DoingDictionary => doingDictionary;
-        public ConcurrentDictionary<string, List<TaskInfoModel>> DoneDictionary => doneDictionary;
-
-    }
-
-    public class TaskInfoModel
-    {
-        [Required]
-        public string TaskDescription { get; set; }
-
-        [Required]
-        public string UserName { get; set; }
     }
 }
