@@ -24,3 +24,16 @@
 .language-switcher select {
   padding: 4px;
 }
+
+/* Bilingual caption block styles */
+.caption-block { padding: 4px 6px; }
+.caption-speaker { font-weight: 600; color: #444; margin-bottom: 2px; }
+.caption-line { display: flex; gap: 4px; align-items: baseline; padding: 1px 0; }
+.caption-line .label { color: #888; min-width: 40px; }
+.caption-line.original .text { color: #888; }
+.caption-line.translated .text { color: #333; }
+
+/* Toggle to show only translated text */
+.translation-toggle { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.translation-toggle label { font-size: 13px; color: #333; display: inline-flex; align-items: center; gap: 6px; }
+.translation-toggle input[type="checkbox"] { width: 14px; height: 14px; }

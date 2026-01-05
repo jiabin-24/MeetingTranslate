@@ -7,6 +7,7 @@ export default function CaptionsPanel(props) {
     const { lines } = useRealtimeCaptions({ url, token, meetingId, targetLang });
     const containerRef = useRef(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+    const [showOnlyTranslated, setShowOnlyTranslated] = useState(true);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -34,22 +35,40 @@ export default function CaptionsPanel(props) {
         });
     }, [(lines || []).length, autoScrollEnabled]);
 
-        return (
+    return (
+        <div>
+            <div className="translation-toggle">
+                <label>
+                    <input type="checkbox" checked={showOnlyTranslated} onChange={e => setShowOnlyTranslated(e.target.checked)} /> Show translation only
+                </label>
+            </div>
             <div className="captions" ref={containerRef}>
                 {(lines || []).map((l, i) => {
-                    const rawText = l.text ?? l.Text ?? '';
-                    const speaker = l.speaker ?? l.Speaker ?? '';
-                    let text = rawText[targetLang] ?? rawText.en ?? Object.values(rawText)[0] ?? '';
+                    const rawText = l.text ?? '';
+                    const speaker = l.speaker ?? '';
+                    const original = rawText[l.sourceLang] ?? rawText.en ?? '';
+                    const translated = rawText[targetLang] ?? rawText.en ?? '';
 
                     return (
                         <div
                             key={`${l.startMs}-${l.endMs}-${i}`}
-                            className={l.isFinal ? 'line final' : 'line partial'}
+                            className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
-                            {`[${speaker}] `}{text}
+                            <div className="caption-speaker">[{speaker}]</div>
+                            {!showOnlyTranslated && (
+                                <div className="caption-line original">
+                                    <span className="label">(Orig)</span>
+                                    <span className="text">{original}</span>
+                                </div>
+                            )}
+                            <div className="caption-line translated">
+                                {!showOnlyTranslated && <span className="label">(Tran)</span>}
+                                <span className="text">{translated}</span>
+                            </div>
                         </div>
                     );
                 })}
             </div>
-        );
+        </div>
+    );
 };

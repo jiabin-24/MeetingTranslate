@@ -181,11 +181,11 @@ namespace EchoBot.Media
                         if (string.IsNullOrEmpty(original))
                             return;
 
-                        var lidResult = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-                        _logger.LogInformation($"RECOGNIZED in '{lidResult}': Text={original}");
+                        var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
+                        _logger.LogInformation($"RECOGNIZED in '{sourceLang}': Text={original}");
 
                         await TextToSpeech(e.Result.Translations);
-                        await Transcript(e.Result.Translations, e.Offset, e.Result.Duration);
+                        await Transcript(e.Result.Translations, e.Offset, e.Result.Duration, sourceLang, original);
                     }
                     else if (e.Result.Reason == ResultReason.NoMatch)
                     {
@@ -260,9 +260,9 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration)
+        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration, string sourceLang, string sourceText)
         {
-            long startMs = (long)(offset / 10_000UL);                   // 1ms = 10,000 ticks
+            long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks
             long endMs = startMs + (long)duration.TotalMilliseconds;
 
             // determine speaker label from active speakers if available
@@ -274,9 +274,9 @@ namespace EchoBot.Media
                 Type: "caption",
                 MeetingId: _threadId,
                 Speaker: speakerLabel,
-                Lang: "en",
-                Text: captions.ToDictionary(),
-                IsFinal: false,
+                SourceLang: sourceLang,
+                Text: BuildTextDictionary(captions, sourceLang, sourceText),
+                IsFinal: true,
                 StartMs: startMs,
                 EndMs: endMs
             );
@@ -287,6 +287,14 @@ namespace EchoBot.Media
             var listKey = $"list:{_threadId}";
             await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
             await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
+        }
+
+        private Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
+        {
+            var dict = captions.ToDictionary(k => k.Key, v => v.Value);
+            // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
+            dict[sourceLang] = sourceText;
+            return dict;
         }
     }
 }
