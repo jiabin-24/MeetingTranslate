@@ -54,6 +54,7 @@ namespace EchoBot.Media
             // 添加目标语言
             settings.TargetLanguages.ForEach(lang => _speechConfig.AddTargetLanguage(lang));
             // 提升识别准确率
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy");
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced");
             _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText");
@@ -158,8 +159,11 @@ namespace EchoBot.Media
                     {
                         _logger.LogInformation("init recognizer");
 
-                        // 提供要“自动检测”的候选语言数组（最多 ~10 个，建议 2-3 个常见语言）
-                        var autoDetect = AutoDetectSourceLanguageConfig.FromLanguages(_appSettings.SourceLanguages);
+                        // 自动检测源语言以及其目标语言对应的 custom speech endpoint
+                        var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
+                            : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
+                        var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
+
                         _recognizer = new TranslationRecognizer(_speechConfig, autoDetect, audioInput);
                     }
                 }
@@ -177,7 +181,8 @@ namespace EchoBot.Media
                         if (string.IsNullOrEmpty(original))
                             return;
 
-                        _logger.LogInformation($"Recognized: Text={original}");
+                        var lidResult = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
+                        _logger.LogInformation($"RECOGNIZED in '{lidResult}': Text={original}");
 
                         await TextToSpeech(e.Result.Translations);
                         await Transcript(e.Result.Translations, e.Offset, e.Result.Duration);
