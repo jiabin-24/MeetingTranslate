@@ -7,7 +7,8 @@ export default function CaptionsPanel(props) {
     const { lines } = useRealtimeCaptions({ url, token, meetingId, targetLang });
     const containerRef = useRef(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-    const [showOnlyTranslated, setShowOnlyTranslated] = useState(true);
+    // viewMode: 'both' | 'original' | 'translated'
+    const [viewMode, setViewMode] = useState('both');
 
     useEffect(() => {
         const el = containerRef.current;
@@ -37,10 +38,10 @@ export default function CaptionsPanel(props) {
 
     return (
         <div>
-            <div className="translation-toggle">
-                <label>
-                    <input type="checkbox" checked={showOnlyTranslated} onChange={e => setShowOnlyTranslated(e.target.checked)} /> Show translation only
-                </label>
+            <div className="view-mode-toggle">
+                <button className={viewMode === 'both' ? 'active' : ''} onClick={() => setViewMode('both')}>Show Both</button>
+                <button className={viewMode === 'original' ? 'active' : ''} onClick={() => setViewMode('original')}>Original Only</button>
+                <button className={viewMode === 'translated' ? 'active' : ''} onClick={() => setViewMode('translated')}>Translation Only</button>
             </div>
             <div className="captions" ref={containerRef}>
                 {(lines || []).map((l, i) => {
@@ -55,16 +56,18 @@ export default function CaptionsPanel(props) {
                             className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
                             <div className="caption-speaker">[{speaker}]</div>
-                            {!showOnlyTranslated && (
-                                <div className="caption-line original">
-                                    <span className="label">(Orig)</span>
-                                    <span className="text">{original}</span>
-                                </div>
-                            )}
-                            <div className="caption-line translated">
-                                {!showOnlyTranslated && <span className="label">(Tran)</span>}
-                                <span className="text">{translated}</span>
-                            </div>
+                                    {viewMode !== 'translated' && (
+                                        <div className="caption-line original">
+                                            <span className="label">(orig)</span>
+                                            <span className="text">{original}</span>
+                                        </div>
+                                    )}
+                                    {viewMode !== 'original' && (
+                                        <div className="caption-line translated">
+                                            <span className="label">(tran)</span>
+                                            <span className="text">{translated}</span>
+                                        </div>
+                                    )}
                         </div>
                     );
                 })}
