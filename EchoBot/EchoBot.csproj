@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
     <PackageReference Include="DotNetEnv" Version="3.1.1" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
     <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.47.0" />
@@ -18,6 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.ApplicationInsights" Version="2.23.0" />
     <PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.15690" />
+    <PackageReference Include="Microsoft.SemanticKernel.Agents.AzureAI" Version="1.68.0-preview" />
     <PackageReference Include="Microsoft.Skype.Bots.Media" Version="1.32.0.70-preview" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
   </ItemGroup>

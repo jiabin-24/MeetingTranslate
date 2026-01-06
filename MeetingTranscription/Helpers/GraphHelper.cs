@@ -1,9 +1,6 @@
-﻿// <copyright file="GraphHelper.cs" company="Microsoft">
-// Copyright (c) Microsoft. All rights reserved.
-// </copyright>
-
-namespace MeetingTranscription.Helpers
+﻿namespace MeetingTranscription.Helpers
 {
+    using EchoBot.Util;
     using MeetingTranscription.Models;
     using MeetingTranscription.Models.Configuration;
     using Microsoft.Bot.Builder;
@@ -33,10 +30,10 @@ namespace MeetingTranscription.Helpers
 
         private static ILogger _logger;
 
-        public GraphHelper(IOptions<AzureSettings> azureSettings, ILogger logger)
+        public GraphHelper()
         {
-            this.azureSettings = azureSettings;
-            _logger = logger;
+            this.azureSettings = ServiceLocator.GetRequiredService<IOptions<AzureSettings>>();
+            _logger = ServiceLocator.GetRequiredService<ILogger<GraphHelper>>();
         }
 
         /// <summary>

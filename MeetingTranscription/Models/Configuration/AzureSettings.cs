@@ -1,8 +1,4 @@
-﻿// <copyright file="AzureSettings.cs" company="Microsoft">
-// Copyright (c) Microsoft. All rights reserved.
-// </copyright>
-
-namespace MeetingTranscription.Models.Configuration
+﻿namespace MeetingTranscription.Models.Configuration
 {
     public class AzureSettings
     {

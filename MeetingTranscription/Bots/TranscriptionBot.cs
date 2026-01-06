@@ -1,7 +1,5 @@
-﻿// <copyright file="TranscriptionBot.cs" company="Microsoft">
-// Copyright (c) Microsoft. All rights reserved.
-// </copyright>
-
+﻿using Azure.AI.Agents.Persistent;
+using Azure.Identity;
 using EchoBot.Bot;
 using EchoBot.Models;
 using MeetingTranscription.Helpers;
@@ -13,6 +11,10 @@ using Microsoft.Bot.Schema;
 using Microsoft.Bot.Schema.Teams;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.Agents.AzureAI;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
@@ -26,17 +28,21 @@ namespace MeetingTranscription.Bots
         /// <summary>
         /// Helper instance to make graph calls.
         /// </summary>
-        private readonly GraphHelper graphHelper;
+        private readonly GraphHelper _graphHelper;
 
         /// <summary>
         /// Stores the Azure configuration values.
         /// </summary>
-        private readonly IOptions<AzureSettings> azureSettings;
+        private readonly IOptions<AzureSettings> _azureSettings;
+
+        private readonly AIServiceSettings _aiSettings;
 
         /// <summary>
         /// Store details of meeting transcript.
         /// </summary>
-        private readonly ConcurrentDictionary<string, string> transcriptsDictionary;
+        private readonly ConcurrentDictionary<string, string> _transcriptsDictionary;
+
+        private readonly PersistentAgentsClient _agentClient;
 
         /// <summary>
         /// Gets the thread-safe dictionary that stores meeting information for bots, keyed by bot identifier.
@@ -49,7 +55,7 @@ namespace MeetingTranscription.Bots
         /// <summary>
         /// Instance of card factory to create adaptive cards.
         /// </summary>
-        private readonly ICardFactory cardFactory;
+        private readonly ICardFactory _cardFactory;
 
         /// <summary>
         /// The bot service
@@ -65,15 +71,19 @@ namespace MeetingTranscription.Bots
         /// <param name="transcriptsDictionary">Store details of meeting transcript.</param>
         /// <param name="cardFactory">Instance of card factory to create adaptive cards.</param>
         /// <param name="botService">Join bot service</param>
-        public TranscriptionBot(IOptions<AzureSettings> azureSettings, ConcurrentDictionary<string, string> transcriptsDictionary,
+        public TranscriptionBot(IOptions<AzureSettings> azureSettings, IOptions<AIServiceSettings> aiSettingsOpt, ConcurrentDictionary<string, string> transcriptsDictionary,
             ICardFactory cardFactory, IBotService botService, ILogger<TranscriptionBot> logger)
         {
-            this.transcriptsDictionary = transcriptsDictionary;
-            this.azureSettings = azureSettings;
-            graphHelper = new GraphHelper(azureSettings, logger);
-            this.cardFactory = cardFactory;
-            this._botService = botService;
+            _transcriptsDictionary = transcriptsDictionary;
+            _azureSettings = azureSettings;
+            _graphHelper = new GraphHelper();
+            _cardFactory = cardFactory;
+            _botService = botService;
             _logger = logger;
+
+            _aiSettings = aiSettingsOpt.Value;
+            if (!string.IsNullOrEmpty(_aiSettings.AgentId))
+                _agentClient = new PersistentAgentsClient(_aiSettings.ProjectEndpoint, new ClientSecretCredential(_aiSettings.TenantId, _aiSettings.ClientId, _aiSettings.ClientSecret));
         }
 
         /// <summary>
@@ -85,8 +95,96 @@ namespace MeetingTranscription.Bots
         /// <returns>A task that represents the work queued to execute.</returns>
         protected override async Task OnMessageActivityAsync(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
         {
+            if (!string.IsNullOrEmpty(_aiSettings.AgentId))
+            {
+                await SendAIMessage(turnContext, cancellationToken);
+                return;
+            }
             var replyText = $"Echo: {turnContext.Activity.Text}";
             await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
+        }
+
+        private async Task SendAIMessage(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)
+        {
+            var agentDefinition = await _agentClient.Administration.GetAgentAsync(_aiSettings.AgentId, cancellationToken);
+            var agent = new AzureAIAgent(agentDefinition, _agentClient);
+            var thread = new AzureAIAgentThread(_agentClient);
+
+            // create the user message to send to the agent
+            var message = new ChatMessageContent(AuthorRole.User, turnContext.Activity.Text);
+
+            // invoke the agent and stream the responses to the user
+            // Send an initial placeholder message and update it as chunks arrive so the user sees a streaming reply
+            var initialActivity = MessageFactory.Text("Working on it...");
+            var sendResponse = await turnContext.SendActivityAsync(initialActivity, cancellationToken);
+
+            var aggregated = string.Empty;
+
+            // Throttle settings: don't update more than once per interval to avoid hitting rate limits.
+            var throttleInterval = TimeSpan.FromMilliseconds(500);
+            var lastUpdate = DateTime.MinValue;
+
+            await foreach (AgentResponseItem<StreamingChatMessageContent> agentResponse in agent.InvokeStreamingAsync(message, thread, cancellationToken: cancellationToken))
+            {
+                // aggregate partial content
+                aggregated += agentResponse.Message.Content;
+
+                var now = DateTime.UtcNow;
+
+                // Only update the activity when throttle interval has passed
+                if ((now - lastUpdate) >= throttleInterval)
+                {
+                    lastUpdate = now;
+
+                    // build an update activity that targets the original sent message
+                    var updateActivity = new Activity
+                    {
+                        Id = sendResponse.Id,
+                        Type = ActivityTypes.Message,
+                        Text = aggregated,
+                        Conversation = turnContext.Activity.Conversation,
+                        From = turnContext.Activity.Recipient,
+                        Recipient = turnContext.Activity.From,
+                        ChannelId = turnContext.Activity.ChannelId,
+                        ServiceUrl = turnContext.Activity.ServiceUrl,
+                    };
+
+                    // update the original message so the user sees the response streaming
+                    try
+                    {
+                        await turnContext.UpdateActivityAsync(updateActivity, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        // fallback to sending incremental messages if update isn't allowed
+                        _logger.LogWarning($"Failed to update activity while streaming, sending incremental message. {ex.Message}");
+                        await turnContext.SendActivityAsync(MessageFactory.Text(aggregated), cancellationToken);
+                    }
+                }
+            }
+
+            // Ensure final content is sent/updated after streaming completes
+            try
+            {
+                var finalUpdate = new Activity
+                {
+                    Id = sendResponse.Id,
+                    Type = ActivityTypes.Message,
+                    Text = aggregated,
+                    Conversation = turnContext.Activity.Conversation,
+                    From = turnContext.Activity.Recipient,
+                    Recipient = turnContext.Activity.From,
+                    ChannelId = turnContext.Activity.ChannelId,
+                    ServiceUrl = turnContext.Activity.ServiceUrl,
+                };
+
+                await turnContext.UpdateActivityAsync(finalUpdate, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to send final update activity while streaming, sending final message. {ex.Message}");
+                await turnContext.SendActivityAsync(MessageFactory.Text(aggregated), cancellationToken);
+            }
         }
 
         /// <summary>
@@ -132,36 +230,47 @@ namespace MeetingTranscription.Bots
             try
             {
                 var meetingInfo = await TeamsInfo.GetMeetingInfoAsync(turnContext);
+
                 _logger.LogInformation($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
                 // End the bot's call in the meeting
                 if (_botMeetingsDictionary.TryRemove(meeting.Id, out var threadId))
-                {
                     await _botService.EndCallByThreadIdAsync(threadId);
-                }
 
+                await SendMeetingTranscriptions(meetingInfo, turnContext, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
+            }
+        }
+
+        private async Task SendMeetingTranscriptions(Microsoft.Bot.Schema.Teams.MeetingInfo meetingInfo, ITurnContext<IEventActivity> turnContext, CancellationToken cancellationToken)
+        {
+            try
+            {
                 // NEW: Get meeting organizer information when meeting ends
-                var organizerId = await graphHelper.GetMeetingOrganizerFromTeamsContextAsync(turnContext);
+                var organizerId = await _graphHelper.GetMeetingOrganizerFromTeamsContextAsync(turnContext);
                 if (!string.IsNullOrEmpty(organizerId))
                 {
                     _logger.LogInformation($"Meeting organizer identified: {organizerId}");
                 }
 
                 // NEW: Use Teams context to find organizer and get transcripts
-                var result = await graphHelper.GetMeetingTranscriptionsAsync(meetingInfo.Details.MsGraphResourceId, organizerId);
+                var result = await _graphHelper.GetMeetingTranscriptionsAsync(meetingInfo.Details.MsGraphResourceId, organizerId);
 
                 if (!string.IsNullOrEmpty(result))
                 {
-                    transcriptsDictionary.AddOrUpdate(meetingInfo.Details.MsGraphResourceId, result, (key, newValue) => result);
+                    _transcriptsDictionary.AddOrUpdate(meetingInfo.Details.MsGraphResourceId, result, (key, newValue) => result);
 
-                    var attachment = this.cardFactory.CreateAdaptiveCardAttachement(new { MeetingId = meetingInfo.Details.MsGraphResourceId });
+                    var attachment = this._cardFactory.CreateAdaptiveCardAttachement(new { MeetingId = meetingInfo.Details.MsGraphResourceId });
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
 
                     _logger.LogInformation($"Successfully retrieved and cached meeting transcript for {meetingInfo.Details.MsGraphResourceId}");
                 }
                 else
                 {
-                    var attachment = this.cardFactory.CreateNotFoundCardAttachement();
+                    var attachment = this._cardFactory.CreateNotFoundCardAttachement();
                     await turnContext.SendActivityAsync(MessageFactory.Attachment(attachment), cancellationToken);
 
                     _logger.LogInformation($"No transcript found for meeting {meetingInfo.Details.MsGraphResourceId}");
@@ -169,10 +278,9 @@ namespace MeetingTranscription.Bots
             }
             catch (Exception ex)
             {
-                _logger.LogInformation($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
-
+                _logger.LogError($"Error in OnTeamsMeetingEndAsync: {ex.Message}");
                 // Send error card to user
-                var errorAttachment = this.cardFactory.CreateNotFoundCardAttachement();
+                var errorAttachment = this._cardFactory.CreateNotFoundCardAttachement();
                 await turnContext.SendActivityAsync(MessageFactory.Attachment(errorAttachment), cancellationToken);
             }
         }
@@ -198,7 +306,7 @@ namespace MeetingTranscription.Bots
                         Type = "continue",
                         Value = new TaskModuleTaskInfo()
                         {
-                            Url = $"{this.azureSettings.Value.AppBaseUrl}/home?meetingId={meetingId}",
+                            Url = $"{this._azureSettings.Value.AppBaseUrl}/home?meetingId={meetingId}",
                             Height = 600,
                             Width = 600,
                             Title = "Meeting Transcript",
@@ -217,7 +325,7 @@ namespace MeetingTranscription.Bots
                         Type = "continue",
                         Value = new TaskModuleTaskInfo()
                         {
-                            Url = this.azureSettings.Value.AppBaseUrl + "/home",
+                            Url = this._azureSettings.Value.AppBaseUrl + "/home",
                             Height = 350,
                             Width = 350,
                             Title = "Meeting Transcript",

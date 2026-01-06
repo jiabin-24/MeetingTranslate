@@ -31,9 +31,11 @@ static class Program
 
         builder.Services.AddHttpClient().AddControllers().AddNewtonsoftJson();
 
-        // The following line enables Application Insights telemetry collection.
+        // Add Application Insights telemetry services to the services container.
         builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
-        builder.Logging.AddApplicationInsights();
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConsole();
+        builder.Logging.AddApplicationInsights(); // 只用于旧模式，若 AddApplicationInsightsTelemetry 已注册可省略
 
         // Creates Singleton Card Factory.
         builder.Services.AddSingleton<ICardFactory, CardFactory>();
@@ -149,5 +151,7 @@ static class Program
             if (string.IsNullOrEmpty(botOptions.MicrosoftAppPassword))
                 throw new ArgumentException("MicrosoftAppPassword is null or empty. Please check your configuration.");
         });
+
+        builder.Services.AddOptions<AIServiceSettings>().BindConfiguration(nameof(AIServiceSettings));
     }
 }

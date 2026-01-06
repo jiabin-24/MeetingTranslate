@@ -1,12 +1,5 @@
-﻿// <copyright file="HomeController.cs" company="Microsoft">
-// Copyright (c) Microsoft. All rights reserved.
-// </copyright>
-
-using MeetingTranscription.Helpers;
-using MeetingTranscription.Models.Configuration;
+﻿using MeetingTranscription.Helpers;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
@@ -14,23 +7,17 @@ namespace MeetingTranscription.Controllers
 {
     public class HomeController : Controller
     {
-        private readonly ConcurrentDictionary<string, string> transcriptsDictionary;
+        private readonly ConcurrentDictionary<string, string> _transcriptsDictionary;
 
         /// <summary>
         /// Stores the Azure configuration values.
         /// </summary>
-        private readonly IOptions<AzureSettings> azureSettings;
+        private readonly GraphHelper _graphHelper;
 
-        /// <summary>
-        /// Stores the Azure configuration values.
-        /// </summary>
-        private readonly GraphHelper graphHelper;
-
-        public HomeController(ConcurrentDictionary<string, string> transcriptsDictionary, IOptions<AzureSettings> azureSettings, ILogger<HomeController> logger)
+        public HomeController(ConcurrentDictionary<string, string> transcriptsDictionary)
         {
-            this.transcriptsDictionary = transcriptsDictionary;
-            this.azureSettings = azureSettings;
-            graphHelper = new(azureSettings, logger);
+            _graphHelper = new();
+            _transcriptsDictionary = transcriptsDictionary;
         }
 
         /// <summary>
@@ -44,17 +31,17 @@ namespace MeetingTranscription.Controllers
 
             if (!string.IsNullOrEmpty(meetingId))
             {
-                var isFound = transcriptsDictionary.TryGetValue(meetingId, out string transcripts);
+                var isFound = _transcriptsDictionary.TryGetValue(meetingId, out string transcripts);
                 if (isFound)
                 {
                     ViewBag.Transcripts = $"Format: {transcripts}";
                 }
                 else
                 {
-                    var result = await this.graphHelper.GetMeetingTranscriptionsAsync(meetingId);
+                    var result = await _graphHelper.GetMeetingTranscriptionsAsync(meetingId);
                     if (!string.IsNullOrEmpty(meetingId))
                     {
-                        transcriptsDictionary.AddOrUpdate(meetingId, result, (key, newValue) => result);
+                        _transcriptsDictionary.AddOrUpdate(meetingId, result, (key, newValue) => result);
                         ViewBag.Transcripts = $"Format: {result}";
                     }
                 }
