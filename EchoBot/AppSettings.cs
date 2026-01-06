@@ -73,13 +73,6 @@ namespace EchoBot
 
         /// <summary>
         /// Gets or sets the Load Balancer port for the specific VM instance
-        /// used for call notifications
-        /// </summary>
-        [Required]
-        public int BotInstanceExternalPort { get; set; }
-
-        /// <summary>
-        /// Gets or sets the Load Balancer port for the specific VM instance
         /// used for media notifications
         /// </summary>
         [Required]

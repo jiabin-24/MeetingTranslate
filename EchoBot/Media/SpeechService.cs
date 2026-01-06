@@ -5,6 +5,7 @@ using Microsoft.CognitiveServices.Speech.Translation;
 using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
 using StackExchange.Redis;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using static EchoBot.Models.Caption;
 
@@ -25,6 +26,9 @@ namespace EchoBot.Media
         /// </summary>
         protected bool _isDraining;
 
+        // Mapping between audio socket Id and participant Id.
+        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap;
+
         /// <summary>
         /// The logger
         /// </summary>
@@ -44,11 +48,12 @@ namespace EchoBot.Media
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, ILogger logger, string threadId = "")
+        public SpeechService(AppSettings settings, ConcurrentDictionary<string, string> audioToIdentityMap, string threadId = "")
         {
-            _logger = logger;
+            _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
             _appSettings = settings;
+            _audioToIdentityMap = audioToIdentityMap;
             _threadId = threadId ?? string.Empty;
 
             // 添加目标语言
@@ -268,7 +273,11 @@ namespace EchoBot.Media
             // determine speaker label from active speakers if available
             string speakerLabel = "Bot";
             if (_activeSpeakers is { Length: > 0 })
-                speakerLabel = $"Speaker-{_activeSpeakers[0]}";
+            {
+                var audioId = _activeSpeakers[0].ToString();
+                if (!_audioToIdentityMap.TryGetValue(audioId, out speakerLabel))
+                    speakerLabel = $"Speaker-{_activeSpeakers[0]}";
+            }
 
             var payload = new CaptionPayload(
                 Type: "caption",

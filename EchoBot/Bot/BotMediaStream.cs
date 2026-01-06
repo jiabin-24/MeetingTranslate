@@ -6,6 +6,7 @@ using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
 namespace EchoBot.Bot
@@ -21,6 +22,9 @@ namespace EchoBot.Bot
         /// The participants
         /// </summary>
         internal List<IParticipant> participants;
+
+        // Mapping between audio socket Id and participant Id.
+        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap;
 
         /// <summary>
         /// The audio socket
@@ -46,27 +50,26 @@ namespace EchoBot.Bot
         /// <param name="callId">The call identity</param>
         /// <param name="threadId">The thread identity</param>
         /// <param name="graphLogger">The Graph logger.</param>
-        /// <param name="logger">The logger.</param>
         /// <param name="settings">Azure settings</param>
         /// <exception cref="InvalidOperationException">A mediaSession needs to have at least an audioSocket</exception>
         public BotMediaStream(
             ILocalMediaSession mediaSession,
             string callId,
             string threadId,
+            ConcurrentDictionary<string, string> audioToIdentityMap,
             IGraphLogger graphLogger,
-            ILogger logger,
             AppSettings settings
         )
             : base(graphLogger)
         {
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
-            ArgumentVerifier.ThrowOnNullArgument(logger, nameof(logger));
             ArgumentVerifier.ThrowOnNullArgument(settings, nameof(settings));
 
             _settings = settings;
-            _logger = logger;
+            _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
 
             this.participants = new List<IParticipant>();
+            _audioToIdentityMap = audioToIdentityMap;
 
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
@@ -86,7 +89,7 @@ namespace EchoBot.Bot
 
             if (_settings.UseSpeechService)
             {
-                _languageService = new SpeechService(_settings, _logger, threadId);
+                _languageService = new SpeechService(_settings, audioToIdentityMap, threadId);
                 _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
             }
         }

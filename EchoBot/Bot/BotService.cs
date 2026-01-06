@@ -124,8 +124,8 @@ namespace EchoBot.Bot
                 MediaPlatformLogger = _mediaPlatformLogger
             };
 
-            var notificationUrl = new Uri($"https://{_settings.ServiceDnsName}:{_settings.BotInstanceExternalPort}/{HttpRouteConstants.CallSignalingRoutePrefix}/{HttpRouteConstants.OnNotificationRequestRoute}");
-            _logger.LogInformation($"NotificationUrl: ${notificationUrl}");
+            var notificationUrl = new Uri($"https://{_settings.ServiceDnsName}/{HttpRouteConstants.CallSignalingRoutePrefix}");
+            _logger.LogInformation($"NotificationUrl: {notificationUrl}");
 
             builder.SetAuthenticationProvider(authProvider);
             builder.SetNotificationUrl(notificationUrl);
@@ -311,7 +311,7 @@ namespace EchoBot.Bot
             foreach (var call in args.AddedResources)
             {
                 var threadId = call.Resource.ChatInfo.ThreadId;
-                var callHandler = new CallHandler(call, threadId, _settings, _logger);
+                var callHandler = new CallHandler(call, threadId, _settings);
                 this.CallHandlers[threadId] = callHandler;
             }
 

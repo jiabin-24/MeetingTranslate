@@ -1,10 +1,10 @@
 ﻿using EchoBot.Util;
-using Microsoft.Graph;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
+using System.Collections.Concurrent;
 using System.Timers;
 
 namespace EchoBot.Bot
@@ -26,18 +26,19 @@ namespace EchoBot.Bot
         /// <value>The bot media stream.</value>
         public BotMediaStream BotMediaStream { get; private set; }
 
+        // Mapping between audio socket Id and participant Id.
+        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap = new ConcurrentDictionary<string, string>();
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
         /// </summary>
         /// <param name="statefulCall">The stateful call.</param>
         /// <param name="threadId">The thread identifier.</param>
         /// <param name="settings">The settings.</param>
-        /// <param name="logger"></param>
         public CallHandler(
             ICall statefulCall,
             string threadId,
-            AppSettings settings,
-            ILogger logger
+            AppSettings settings
         )
             : base(TimeSpan.FromMinutes(10), statefulCall?.GraphLogger)
         {
@@ -45,7 +46,7 @@ namespace EchoBot.Bot
             this.Call.OnUpdated += this.CallOnUpdated;
             this.Call.Participants.OnUpdated += this.ParticipantsOnUpdated;
 
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, threadId, this.GraphLogger, logger, settings);
+            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, threadId, _audioToIdentityMap, this.GraphLogger, settings);
         }
 
         /// <inheritdoc/>
@@ -112,9 +113,15 @@ namespace EchoBot.Bot
         private string updateParticipant(List<IParticipant> participants, IParticipant participant, bool added, string participantDisplayName = "")
         {
             if (added)
+            {
                 participants.Add(participant);
+                this.SubscribeToParticipantAudio(participant, forceSubscribe: false);
+            }
             else
+            {
                 participants.Remove(participant);
+                UnsubscribeFromParticipantAudio(participant);
+            }
             return createParticipantUpdateJson(participant.Id, participantDisplayName);
         }
 
@@ -144,6 +151,8 @@ namespace EchoBot.Bot
                         json = updateParticipant(this.BotMediaStream.participants, participant, added);
                     }
                 }
+
+                GraphLogger.Info($"Update participants: {json}");
             }
         }
 
@@ -170,6 +179,25 @@ namespace EchoBot.Bot
                     return true;
 
             return false;
+        }
+
+        private void SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
+        {
+            // filter the mediaStreams to see if the participant has a video send
+            var participantSendCapableAudioStream = participant.Resource.MediaStreams.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
+            if (participantSendCapableAudioStream != null)
+            {
+                _audioToIdentityMap.TryAdd(participantSendCapableAudioStream.SourceId!, participant.Resource.Info.Identity.User.DisplayName ?? participantSendCapableAudioStream.SourceId!);
+            }
+        }
+
+        private void UnsubscribeFromParticipantAudio(IParticipant participant)
+        {
+            var participantSendCapableAudioStream = participant.Resource.MediaStreams.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
+            if (participantSendCapableAudioStream != null)
+            {
+                _audioToIdentityMap.TryRemove(participantSendCapableAudioStream.SourceId!, out _);
+            }
         }
     }
 }
