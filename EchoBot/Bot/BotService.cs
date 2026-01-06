@@ -3,7 +3,6 @@ using EchoBot.Constants;
 using EchoBot.Models;
 using EchoBot.Util;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Client;
