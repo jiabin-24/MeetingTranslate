@@ -67,11 +67,6 @@ namespace EchoBot
         public Dictionary<string, string> CustomSpeechEndpoints { get; set; }
 
         /// <summary>
-        /// Target languages for translation
-        /// </summary>
-        public List<string> TargetLanguages { get; set; }
-
-        /// <summary>
         /// Gets or sets the Load Balancer port for the specific VM instance
         /// used for media notifications
         /// </summary>

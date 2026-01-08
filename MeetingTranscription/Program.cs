@@ -153,5 +153,6 @@ static class Program
         });
 
         builder.Services.AddOptions<AIServiceSettings>().BindConfiguration(nameof(AIServiceSettings));
+        builder.Services.AddOptions<TranslatorOptions>().BindConfiguration("Translator");
     }
 }

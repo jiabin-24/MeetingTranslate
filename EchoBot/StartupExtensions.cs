@@ -1,4 +1,5 @@
 using EchoBot.Bot;
+using EchoBot.Translator;
 using EchoBot.Util;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -23,6 +24,7 @@ namespace EchoBot
             app.Services.AddSingleton<IBotMediaLogger, BotMediaLogger>();
 
             app.Services.AddSingleton<IBotService, BotService>();
+            app.Services.AddHttpClient<ITranslatorClient, AzureTranslatorClient>().SetHandlerLifetime(TimeSpan.FromMinutes(10));
 
             // determine internal hosting protocol and build listening urls
             var botInternalHostingProtocol = "https";

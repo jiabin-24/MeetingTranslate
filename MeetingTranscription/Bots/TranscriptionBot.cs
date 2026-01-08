@@ -121,7 +121,7 @@ namespace MeetingTranscription.Bots
             var aggregated = string.Empty;
 
             // Throttle settings: don't update more than once per interval to avoid hitting rate limits.
-            var throttleInterval = TimeSpan.FromMilliseconds(500);
+            var throttleInterval = TimeSpan.FromMilliseconds(300);
             var lastUpdate = DateTime.MinValue;
 
             await foreach (AgentResponseItem<StreamingChatMessageContent> agentResponse in agent.InvokeStreamingAsync(message, thread, cancellationToken: cancellationToken))

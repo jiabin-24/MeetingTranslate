@@ -1,11 +1,15 @@
-﻿using EchoBot.Util;
+﻿using EchoBot.Translator;
+using EchoBot.Util;
+using MeetingTranscription.Models.Configuration;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
-using Microsoft.CognitiveServices.Speech.Translation;
+using Microsoft.Extensions.Options;
 using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
+using Sprache;
 using StackExchange.Redis;
 using System.Collections.Concurrent;
+using System.Data;
 using System.Runtime.InteropServices;
 using static EchoBot.Models.Caption;
 
@@ -34,13 +38,15 @@ namespace EchoBot.Media
         /// </summary>
         private readonly ILogger _logger;
         private readonly AppSettings _appSettings;
+        private readonly TranslatorOptions _translatorOptions;
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
-        private readonly SpeechTranslationConfig _speechConfig;
-        private TranslationRecognizer _recognizer;
+        private readonly SpeechConfig _speechConfig;
+        private SpeechRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
         private readonly CaptionPublisher _wsPublisher;
+        private readonly ITranslatorClient _translatorClient;
         private readonly IConnectionMultiplexer _mux;
         private readonly string _threadId;
         private uint[]? _activeSpeakers;
@@ -51,13 +57,12 @@ namespace EchoBot.Media
         public SpeechService(AppSettings settings, ConcurrentDictionary<string, string> audioToIdentityMap, string threadId = "")
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
-            _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
+            _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
             _appSettings = settings;
+            _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _audioToIdentityMap = audioToIdentityMap;
             _threadId = threadId ?? string.Empty;
 
-            // 添加目标语言
-            settings.TargetLanguages.ForEach(lang => _speechConfig.AddTargetLanguage(lang));
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy");
@@ -68,6 +73,7 @@ namespace EchoBot.Media
             _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "true");
 
             _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
+            _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _wsPublisher = ServiceLocator.GetRequiredService<CaptionPublisher>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
@@ -169,18 +175,19 @@ namespace EchoBot.Media
                             : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
                         var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
 
-                        _recognizer = new TranslationRecognizer(_speechConfig, autoDetect, audioInput);
+                        _recognizer = new SpeechRecognizer(_speechConfig, autoDetect, audioInput);
                     }
                 }
 
                 _recognizer.Recognizing += (s, e) =>
                 {
-                    _logger.LogInformation($"RECOGNIZING: Text={e.Result.Text}");
+                    var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
+                    _logger.LogInformation($"RECOGNIZING in '{sourceLang}': Text={e.Result.Text}");
                 };
 
                 _recognizer.Recognized += async (s, e) =>
                 {
-                    if (e.Result.Reason == ResultReason.TranslatedSpeech)
+                    if (e.Result.Reason == ResultReason.RecognizedSpeech)
                     {
                         var original = e.Result.Text; // 原文
                         if (string.IsNullOrEmpty(original))
@@ -189,8 +196,19 @@ namespace EchoBot.Media
                         var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                         _logger.LogInformation($"RECOGNIZED in '{sourceLang}': Text={original}");
 
-                        await TextToSpeech(e.Result.Translations);
-                        await Transcript(e.Result.Translations, e.Offset, e.Result.Duration, sourceLang, original);
+                        var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
+                        try
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules, cts.Token);
+
+                            await TextToSpeech(translated["en"]);
+                            await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError($"Translate failed: {ex.Message}");
+                        }
                     }
                     else if (e.Result.Reason == ResultReason.NoMatch)
                     {
@@ -247,10 +265,10 @@ namespace EchoBot.Media
             _isDraining = false;
         }
 
-        private async Task TextToSpeech(IReadOnlyDictionary<string, string> captions)
+        private async Task TextToSpeech(string text)
         {
             // convert the text to speech
-            SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(captions["en"]);
+            SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(text);
             // take the stream of the result
             // create 20ms media buffers of the stream
             // and send to the AudioSocket in the BotMediaStream
