@@ -4,8 +4,9 @@ import { useRealtimeCaptions } from '../utils/useRealtimeCaptions';
 export default function CaptionsPanel(props) {
 
     const { url, meetingId, targetLang } = props;
-    const { lines } = useRealtimeCaptions({ url, meetingId, targetLang });
+    const { lines, unlockAudio } = useRealtimeCaptions({ url, meetingId, targetLang });
     const containerRef = useRef(null);
+    const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     // viewMode: 'both' | 'original' | 'translated'
     const [viewMode, setViewMode] = useState('both');
@@ -39,6 +40,19 @@ export default function CaptionsPanel(props) {
     return (
         <div>
             <div className="view-mode-toggle">
+                <button
+                    className={audioEnabled ? 'audio-enabled' : 'audio-disabled'}
+                    onClick={() => {
+                        try {
+                            unlockAudio();
+                            setAudioEnabled(true);
+                        } catch (e) {
+                            console.warn('unlockAudio failed', e);
+                        }
+                    }}
+                >
+                    {audioEnabled ? 'Live Audio Enabled' : 'Enable Live Audio'}
+                </button>
                 <button className={viewMode === 'both' ? 'active' : ''} onClick={() => setViewMode('both')}>Show Both</button>
                 <button className={viewMode === 'original' ? 'active' : ''} onClick={() => setViewMode('original')}>Original Only</button>
                 <button className={viewMode === 'translated' ? 'active' : ''} onClick={() => setViewMode('translated')}>Translation Only</button>

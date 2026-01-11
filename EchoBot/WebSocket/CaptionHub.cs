@@ -133,5 +133,33 @@ namespace EchoBot.WebSocket
                 }
             }
         }
+
+        public async Task BroadcastAudioAsync(string meetingId, string audioId, byte[] audio, string contentType, int length, string headerHex)
+        {
+            // First send a small JSON metadata header so clients know an audio blob is coming
+            var meta = JsonSerializer.Serialize(new { type = "audio", meetingId, audioId, contentType, length, headerHex, isFinal = true });
+            var metaBytes = Encoding.UTF8.GetBytes(meta);
+
+            foreach (var kv in _clients)
+            {
+                var ws = kv.Key;
+                var metaInfo = kv.Value;
+
+                if (ws.State != WebSocketState.Open) continue;
+                if (!metaInfo.Authed) continue;
+                if (!string.Equals(metaInfo.MeetingId, meetingId, StringComparison.Ordinal)) continue;
+
+                try
+                {
+                    await ws.SendAsync(metaBytes, WebSocketMessageType.Text, true, CancellationToken.None);
+                    // send binary audio
+                    await ws.SendAsync(new ReadOnlyMemory<byte>(audio), WebSocketMessageType.Binary, true, CancellationToken.None);
+                }
+                catch
+                {
+                    // ignore failures
+                }
+            }
+        }
     }
 }

@@ -58,6 +58,8 @@ namespace EchoBot.Media
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
+            // Use WAV PCM output so Bot media buffers can be created from the stream
+            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm);
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _audioToIdentityMap = audioToIdentityMap;
@@ -270,16 +272,47 @@ namespace EchoBot.Media
             // convert the text to speech
             SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(text);
             // take the stream of the result
-            // create 20ms media buffers of the stream
-            // and send to the AudioSocket in the BotMediaStream
+            // create 20ms media buffers of the stream and send to the AudioSocket in the BotMediaStream
             using (var stream = AudioDataStream.FromResult(result))
             {
-                var currentTick = DateTime.Now.Ticks;
-                MediaStreamEventArgs args = new MediaStreamEventArgs
+                try
                 {
-                    AudioMediaBuffers = Util.Utilities.CreateAudioMediaBuffers(stream, currentTick, _logger)
-                };
-                OnSendMediaBufferEventArgs(this, args);
+                    byte[] audioBytes;
+
+                    if (result.AudioData != null && result.AudioData.Length > 0)
+                        audioBytes = result.AudioData;
+                    else
+                    {
+                        // Read full audio bytes from stream
+                        stream.SetPosition(0);
+                        using var ms = new MemoryStream();
+                        var buffer = new byte[8192];
+                        uint read;
+                        while ((read = stream.ReadData(buffer)) > 0)
+                        {
+                            ms.Write(buffer, 0, (int)read);
+                        }
+                        audioBytes = ms.ToArray();
+                    }
+
+                    _logger.LogDebug($"TTS audio bytes length={audioBytes?.Length ?? 0}");
+
+                    // Create bot media buffers from the WAV bytes
+                    // compute header hex for debugging
+                    var headerHex = string.Empty;
+                    if (audioBytes.Length >= 12)
+                        headerHex = string.Join(' ', audioBytes.Take(12).Select(b => b.ToString("x2")));
+
+                    // content type is WAV PCM
+                    var contentType = "audio/wav";
+                    var audioId = Guid.NewGuid().ToString();
+                    // publish to connected websocket clients (include length and header sample)
+                    await _wsPublisher.PublishAudioAsync(_threadId, audioId, audioBytes, contentType, audioBytes.Length, headerHex);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to TextToSpeech");
+                }
             }
         }
 
