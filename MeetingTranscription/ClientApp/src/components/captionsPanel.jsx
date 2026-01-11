@@ -3,8 +3,8 @@ import { useRealtimeCaptions } from '../utils/useRealtimeCaptions';
 
 export default function CaptionsPanel(props) {
 
-    const { url, token, meetingId, targetLang } = props;
-    const { lines } = useRealtimeCaptions({ url, token, meetingId, targetLang });
+    const { url, meetingId, targetLang } = props;
+    const { lines } = useRealtimeCaptions({ url, meetingId, targetLang });
     const containerRef = useRef(null);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     // viewMode: 'both' | 'original' | 'translated'

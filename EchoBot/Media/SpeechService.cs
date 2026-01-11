@@ -200,7 +200,7 @@ namespace EchoBot.Media
                         try
                         {
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules, cts.Token);
+                            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
                             await TextToSpeech(translated["en"]);
                             await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original);

@@ -65,8 +65,7 @@ namespace EchoBot.WebSocket
                         try
                         {
                             var auth = JsonSerializer.Deserialize<AuthMessage>(text);
-                            if (auth?.Type?.Equals("auth", StringComparison.OrdinalIgnoreCase) == true &&
-                                JwtAuth.ValidateToken(auth.Token, out var uid))
+                            if (auth?.Type?.Equals("auth", StringComparison.OrdinalIgnoreCase) == true && JwtAuth.ValidateToken(auth.Token, out var uid))
                             {
                                 meta.UserId = uid;
                                 meta.Authed = true;

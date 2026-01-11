@@ -16,12 +16,11 @@ const AppInMeeting = props => {
         });
     }, []);
 
-    // 实际项目中从登录/会议上下文拿 token & meetingId
-    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyXzEyMyIsIm1lZXRpbmdJZCI6Im1lZXRpbmdfYWJjIiwianRpIjoiMTIzNDU2NzgiLCJleHAiOjE3MzUwMzg1MjcsImlzcyI6InlvdXItYXBwIiwiYXVkIjoieW91ci1jbGllbnQifQ.7CX1V8oP9g4FRTN0d8qJ4knT4M0k5d_RSSG5DH0rFxw';
     const [targetLang, setTargetLang] = useState('zh-Hans');
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
+    //const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
+    const wsUrl = 'wss://localhost:9441/realtime'; // For local testing with self-signed certs
 
     return (
         <div className="captions-panel-container">
@@ -35,7 +34,6 @@ const AppInMeeting = props => {
             {meetingId ? (
                 <CaptionsPanel
                     url={wsUrl}
-                    token={token}
                     meetingId={meetingId}
                     targetLang={targetLang}
                 />
