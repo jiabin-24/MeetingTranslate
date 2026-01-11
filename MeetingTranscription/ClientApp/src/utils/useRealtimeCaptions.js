@@ -8,6 +8,9 @@ let _audioUnlocked = false;
 let _interactionHandlersInstalled = false;
 // Shared AudioContext for decoding/playing when <audio> can't handle the blob
 let _audioCtx = null;
+// Currently playing element / source so we can stop it
+let _currentAudioEl = null;
+let _currentAudioSource = null; // AudioBufferSourceNode
 
 function ensureAudioContext() {
     if (!_audioCtx) {
@@ -67,7 +70,10 @@ async function unlockPendingAudio() {
         let url = entry && entry.url ? entry.url : null;
         if (!url) url = URL.createObjectURL(blob);
         try {
+            // notify UI that playback is starting
+            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
             await playAudioUrl(url);
+            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
         } catch (e) {
             // If it still fails, just drop it
             console.warn('Playback of queued audio failed', e);
@@ -77,11 +83,37 @@ async function unlockPendingAudio() {
     }
 }
 
+// Stop playback and clear queued audio
+function stopAudio() {
+    try {
+        // stop current HTMLAudioElement
+        if (_currentAudioEl) {
+            try { _currentAudioEl.pause(); } catch {}
+            try { _currentAudioEl.src = ''; } catch {}
+            try { _currentAudioEl.load(); } catch {}
+            _currentAudioEl = null;
+        }
+        // stop current WebAudio source
+        if (_currentAudioSource) {
+            try { _currentAudioSource.onended = null; } catch {}
+            try { _currentAudioSource.stop(); } catch {}
+            try { _currentAudioSource.disconnect(); } catch {}
+            _currentAudioSource = null;
+        }
+        // clear pending queue
+        _pendingAudioBlobs.length = 0;
+        try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
+    } catch (e) {
+        console.warn('stopAudio failed', e);
+    }
+}
+
 // Play an audio URL via HTMLAudioElement and return a promise that resolves when playback ends.
 function playAudioUrl(url) {
     return new Promise((resolve, reject) => {
         try {
             const audio = new Audio(url);
+            _currentAudioEl = audio;
             audio.autoplay = true;
             const cleanup = () => {
                 audio.removeEventListener('ended', onEnd);
@@ -118,7 +150,7 @@ export function useRealtimeCaptions(opts) {
         if (opts.meetingId) {
             (async () => {
                 try {
-                    const url = `https://localhost:9441/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
                     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
                     if (!resp.ok) return;
                     const data = await resp.json();
@@ -196,6 +228,10 @@ export function useRealtimeCaptions(opts) {
                 // binary frames: audio payloads
                 try {
                     const ab = data; // ArrayBuffer
+                    // If audio not unlocked yet, drop incoming binary audio
+                    if (!_audioUnlocked) {
+                        return;
+                    }
                     // Correlate this binary frame with the earliest queued audio metadata
                     let foundKey = null;
                     if (audioQueueRef.current.length > 0) {
@@ -266,6 +302,7 @@ export function useRealtimeCaptions(opts) {
                                     if (isNotAllowedError(err)) {
                                         // keep the url so it can be played later
                                         _pendingAudioBlobs.push({ blob, url });
+                                        try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'queued' } })); } catch (_) {}
                                         setupInteractionUnlock();
                                         return;
                                     }
@@ -276,7 +313,9 @@ export function useRealtimeCaptions(opts) {
                                     if (name === 'NotSupportedError' || /no supported source/.test(msg) || /format/.test(msg)) {
                                         URL.revokeObjectURL(url);
                                         try {
+                                            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
                                             await playChunksWithWebAudio(entry.chunks);
+                                            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
                                         } catch (webaudioErr) {
                                             console.warn('WebAudio fallback failed', webaudioErr);
                                         }
@@ -338,7 +377,7 @@ export function useRealtimeCaptions(opts) {
         }
     };
 
-    return { lines, unlockAudio };
+    return { lines, unlockAudio, stopAudio };
 }
 
 // 将 final 片段覆盖同时间窗的 partial，减少闪烁
@@ -383,10 +422,11 @@ async function playChunksWithWebAudio(chunks) {
     try {
         const audioBuffer = await ctx.decodeAudioData(merged.buffer.slice(0));
         const src = ctx.createBufferSource();
+        _currentAudioSource = src;
         src.buffer = audioBuffer;
         src.connect(ctx.destination);
         return new Promise((resolve) => {
-            src.onended = () => { try { src.disconnect(); } catch {} ; resolve(); };
+            src.onended = () => { try { src.disconnect(); } catch {} ; _currentAudioSource = null; resolve(); };
             src.start(0);
         });
     } catch (e) {

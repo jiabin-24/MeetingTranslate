@@ -19,8 +19,8 @@ const AppInMeeting = props => {
     const [targetLang, setTargetLang] = useState('zh-Hans');
 
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    //const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
-    const wsUrl = 'wss://localhost:9441/realtime'; // For local testing with self-signed certs
+    const wsUrl = `${wsProtocol}//${window.location.host}/realtime`;
+    //const wsUrl = 'wss://localhost:9441/realtime'; // For local testing with self-signed certs
 
     return (
         <div className="captions-panel-container">

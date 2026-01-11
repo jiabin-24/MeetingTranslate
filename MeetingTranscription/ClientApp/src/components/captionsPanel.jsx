@@ -4,12 +4,22 @@ import { useRealtimeCaptions } from '../utils/useRealtimeCaptions';
 export default function CaptionsPanel(props) {
 
     const { url, meetingId, targetLang } = props;
-    const { lines, unlockAudio } = useRealtimeCaptions({ url, meetingId, targetLang });
+    const { lines, unlockAudio, stopAudio } = useRealtimeCaptions({ url, meetingId, targetLang });
     const containerRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     // viewMode: 'both' | 'original' | 'translated'
     const [viewMode, setViewMode] = useState('both');
+    const [audioStatus, setAudioStatus] = useState('idle'); // 'idle'|'queued'|'playing'
+
+    useEffect(() => {
+        const handler = (ev) => {
+            const s = ev && ev.detail && ev.detail.status ? ev.detail.status : 'idle';
+            setAudioStatus(s);
+        };
+        window.addEventListener('realtime-audio-status', handler);
+        return () => window.removeEventListener('realtime-audio-status', handler);
+    }, []);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -39,23 +49,52 @@ export default function CaptionsPanel(props) {
 
     return (
         <div>
-            <div className="view-mode-toggle">
-                <button
-                    className={audioEnabled ? 'audio-enabled' : 'audio-disabled'}
-                    onClick={() => {
-                        try {
-                            unlockAudio();
-                            setAudioEnabled(true);
-                        } catch (e) {
-                            console.warn('unlockAudio failed', e);
-                        }
-                    }}
-                >
-                    {audioEnabled ? 'Live Audio Enabled' : 'Enable Live Audio'}
-                </button>
-                <button className={viewMode === 'both' ? 'active' : ''} onClick={() => setViewMode('both')}>Show Both</button>
-                <button className={viewMode === 'original' ? 'active' : ''} onClick={() => setViewMode('original')}>Original Only</button>
-                <button className={viewMode === 'translated' ? 'active' : ''} onClick={() => setViewMode('translated')}>Translation Only</button>
+            <div className="controls">
+                <div className="view-mode-toggle">
+                    <button className={viewMode === 'both' ? 'active' : ''} onClick={() => setViewMode('both')}>Show Both</button>
+                    <button className={viewMode === 'original' ? 'active' : ''} onClick={() => setViewMode('original')}>Original Only</button>
+                    <button className={viewMode === 'translated' ? 'active' : ''} onClick={() => setViewMode('translated')}>Translation Only</button>
+                </div>
+
+                <div className="audio-toggle">
+                    <button
+                        className={`icon-button ${audioEnabled ? 'audio-enabled' : 'audio-disabled'}`}
+                        onClick={() => {
+                            try {
+                                if (!audioEnabled) {
+                                    unlockAudio();
+                                    setAudioEnabled(true);
+                                } else {
+                                    stopAudio();
+                                    setAudioEnabled(false);
+                                }
+                            } catch (e) {
+                                console.warn('toggle audio failed', e);
+                            }
+                        }}
+                        aria-pressed={audioEnabled}
+                        aria-label={audioEnabled ? 'Disable audio' : 'Enable audio'}
+                    >
+                        <span className="mic-icon" aria-hidden>
+                            {audioEnabled ? (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            ) : (
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M9 21h6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M4 4L20 20" stroke="#B00020" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                            )}
+                        </span>
+                    </button>
+                </div>
             </div>
             <div className="captions" ref={containerRef}>
                 {(lines || []).map((l, i) => {
