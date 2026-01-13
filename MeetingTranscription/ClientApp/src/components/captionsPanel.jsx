@@ -77,14 +77,14 @@ export default function CaptionsPanel(props) {
                     >
                         <span className="mic-icon" aria-hidden>
                             {audioEnabled ? (
-                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                                     <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
                             ) : (
-                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
                                     <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                                     <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

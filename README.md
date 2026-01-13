@@ -13,15 +13,17 @@ extensions:
 urlFragment: officedev-microsoft-teams-samples-meetings-transcription-csharp
 ---
 
-# Bot to show the transcript of the meeting using Microsoft Graph API.
+# Bot to show the transcript of the meeting.
 
-The Meeting Transcript Bot uses Microsoft Graph API to fetch and present meeting transcripts within a Teams task module. It features adaptive cards and bot interactions for seamless user engagement during meetings.
+**Description**: This application shows how to work with the stream of data from the audio socket in a Teams meeting. When the Bot is added to a meeting it will listen and transcript everything that is said. If you decide to use the Speech Service mode, then the bot will use Azure AI Speech Service to convert the Text-To-Speech and you will hear the speaking in a Bot's voice.
 
-## Included Features
-* Bots
-* Adaptive Cards
-* Task Modules
-* RSC Permissions
+The sample also includes scripts and pipelines to deploy the infrastructure and code to run the Bot in Azure on VMSS.
+
+## Getting Started
+* Clone the Git repo. Please see the instructions [here](https://docs.microsoft.com/en-us/vsts/git/tutorial/clone?view=vsts&tabs=visual-studio) to get started with VSTS Git.
+* Log in to your Azure subscription to host web sites and bot services.
+* Launch Visual Studio Code or open a terminal to the root folder of the sample.
+* Fork the repo or clone it and then push it to your own repo in GitHub.
 
 ## Interaction with app
 
