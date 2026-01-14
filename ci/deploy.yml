@@ -1,13 +1,9 @@
 # deploy.yml - contains the deploy_environment job (manual trigger)
 deploy_environment:
   extends: .azure_login
-  stage: deploy
+  stage: run
   interruptible: true
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
-      when: manual
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-      when: manual
     - when: manual
   script:
     - |

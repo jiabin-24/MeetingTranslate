@@ -1,7 +1,7 @@
 # build.yml - contains the build_job definition
 build_job:
   extends: .azure_login
-  stage: build
+  stage: run
   interruptible: true
   variables:
     Base: "publish"
@@ -45,8 +45,4 @@ build_job:
     - pwsh -NoProfile -NonInteractive -File /tmp/run_sync_update.ps1
 
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
-      when: manual
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-      when: manual
     - when: manual

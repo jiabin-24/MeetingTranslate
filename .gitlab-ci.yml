@@ -1,6 +1,5 @@
 stages:
-  - deploy
-  - build
+  - run
 
 variables:
   ORG_NAME: "NIUAI"
