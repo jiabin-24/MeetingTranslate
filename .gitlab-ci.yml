@@ -12,7 +12,7 @@ variables:
 deploy_environment:
   stage: deploy
   tags:
-    - windows
+    - linux
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
@@ -27,7 +27,14 @@ deploy_environment:
       when: always
     - when: manual
   before_script:
-    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Preparing Windows environment...'"
+    # Ensure required tools are present on the Linux runner: pwsh, dotnet, node, az modules
+    - apt-get update -y
+    - apt-get install -y wget apt-transport-https ca-certificates gnupg curl
+    - wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+    - dpkg -i /tmp/packages-microsoft-prod.deb || true
+    - apt-get update -y
+    - apt-get install -y powershell dotnet-sdk-8.0 nodejs npm || true
+    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Preparing Linux environment...'; if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { Install-Module -Name Az -Scope CurrentUser -Force -AllowClobber }"
   script:
     # Ensure Az module is available, log in using the service principal JSON stored in
     # the CI variable `AZURE_CREDENTIALS_NIUAI_BOT`, then run the original deployment script.
@@ -38,7 +45,7 @@ deploy_environment:
 build_job:
   stage: build
   tags:
-    - windows
+    - linux
   interruptible: true
   variables:
     Base: "publish"
@@ -48,44 +55,6 @@ build_job:
     OrgName: "NIUAI"
     Location: "eastasia"
   
-  
-  before_script:
-    # 0️⃣ 确认 choco 可用
-    - pwsh -NoProfile -NonInteractive -Command "choco -v"
-
-    # 1️⃣ 安装 .NET SDK（如果没装）
-    - pwsh -NoProfile -NonInteractive -Command `
-        "if (Get-Command dotnet -ErrorAction SilentlyContinue) {
-            dotnet --version
-         } else {
-            choco install dotnet-8.0-sdk --version 8.0.100 -y
-            dotnet --version
-         }"
-
-    # 2️⃣ 安装 Node.js（如果没装）
-    - pwsh -NoProfile -NonInteractive -Command `
-        "if (Get-Command node -ErrorAction SilentlyContinue) {
-            node -v
-         } else {
-            choco install nodejs --version 18.20.4 -y
-            node -v
-            npm -v
-         }"
-
-    # 3️⃣ 安装 Az PowerShell 模块（如果没装）
-    - pwsh -NoProfile -NonInteractive -Command `
-        "if (-not (Get-Module -ListAvailable Az.Accounts)) {
-            Install-Module Az -Scope CurrentUser -Force -AllowClobber
-         }
-         Import-Module Az.Accounts
-         Get-Module Az.Accounts | Select Name,Version"
-
-    # 4️⃣ 最终确认
-    - pwsh -NoProfile -NonInteractive -Command `
-        "dotnet --info
-         node -v
-         npm -v"
-
   script:
     - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Create build directory'; New-Item -ItemType Directory -Path \"${env:CI_PROJECT_DIR}\${env:Base}\${env:Component}\${env:BuildName}\" -Force | Out-Null"
     - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Install/Check Node and build frontend'; if (Test-Path -Path 'MeetingTranscription/ClientApp/package-lock.json') { Push-Location MeetingTranscription/ClientApp; npm ci; npm run build; Pop-Location } else { Write-Host 'No Node frontend detected (package-lock.json missing)' }"

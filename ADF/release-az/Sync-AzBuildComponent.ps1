@@ -41,7 +41,7 @@ Param (
     [String]$OrgName
 )
 
-$LocationLookup = Get-Content -Path $PSScriptRoot\..\bicep\global\region.json | ConvertFrom-Json
+$LocationLookup = Get-Content -Path (Join-Path $PSScriptRoot '..\bicep\global\region.json') | ConvertFrom-Json
 $Prefix = $LocationLookup.$Location.Prefix
 
 # Azure Blob Container Info
@@ -58,18 +58,21 @@ $StorageContainerParams = @{
 
 # *Builds/<ComponentName>/<BuildName>
 # need to pass this in
-$CurrentFolder = (Get-Item -Path $BasePath\$ComponentName\$BuildName ).FullName
+ $CurrentFolder = (Get-Item -Path (Join-Path -Path $BasePath -ChildPath (Join-Path $ComponentName $BuildName)) ).FullName
 
 # Copy up the files and capture a list of the files URI's
-$SourceFiles = Get-ChildItem -Path $BasePath\$ComponentName\$BuildName -File -Recurse | ForEach-Object {
-    $path = $_.FullName.Substring($Currentfolder.Length + 1).Replace('\', '/')
-    Write-Output -InputObject "$ComponentName/$BuildName/$path"
-    $b = Set-AzStorageBlobContent @StorageContainerParams -File $_.FullName -Blob $ComponentName\$BuildName\$Path -Verbose -Force
+ $SourceFiles = Get-ChildItem -Path (Join-Path -Path $BasePath -ChildPath (Join-Path $ComponentName $BuildName)) -File -Recurse | ForEach-Object {
+    $relative = $_.FullName.Substring($CurrentFolder.Length + 1)
+    $path = $relative -replace '\\','/'
+    $blobName = "$ComponentName/$BuildName/$path"
+    Write-Output -InputObject $blobName
+    $b = Set-AzStorageBlobContent @StorageContainerParams -File $_.FullName -Blob $blobName -Verbose -Force
+    $blobName
 }
 
 # Find all of the files in the share including subfolders
 $Path = "$ComponentName/$BuildName/*"
-$DestinationFiles = Get-AzStorageBlob @StorageContainerParams -Blob $Path | ForEach-Object Name
+$DestinationFiles = Get-AzStorageBlob @StorageContainerParams -Blob $Path | ForEach-Object { $_.Name }
 
 # Compare the new files that were uploaded to the files already on the share
 # these should be deleted from the Azure Blob Container

@@ -33,7 +33,7 @@ Param (
     [String]$OrgName
 )
 
-$LocationLookup = Get-Content -Path $PSScriptRoot\..\bicep\global\region.json | ConvertFrom-Json
+$LocationLookup = Get-Content -Path (Join-Path $PSScriptRoot '..\bicep\global\region.json') | ConvertFrom-Json
 $Prefix = $LocationLookup.$Location.Prefix
 
 # Azure Blob Container Info
@@ -48,17 +48,21 @@ $StorageContainerParams = @{
     Context   = $Context
 }
 
-Get-AzStorageBlob @StorageContainerParams -Blob $ComponentName/$MetaDataFileName | Format-Table -AutoSize
-Get-AzStorageBlobContent -Force @StorageContainerParams -Blob $ComponentName/$MetaDataFileName -Destination $BasePath/$ComponentName/$MetaDataFileName -Verbose
+Get-AzStorageBlob @StorageContainerParams -Blob "$ComponentName/$MetaDataFileName" | Format-Table -AutoSize
+$destPath = Join-Path -Path $BasePath -ChildPath $ComponentName
+if (-not (Test-Path -Path $destPath)) { New-Item -ItemType Directory -Path $destPath -Force | Out-Null }
+Get-AzStorageBlobContent -Force @StorageContainerParams -Blob "$ComponentName/$MetaDataFileName" -Destination (Join-Path $destPath $MetaDataFileName) -Verbose
 
-$data = Get-Content -Path $BasePath/$ComponentName/$MetaDataFileName | ConvertFrom-Json
+ $data = Get-Content -Path (Join-Path $destPath $MetaDataFileName) | ConvertFrom-Json
 Write-Verbose -Message "Previous Build in [$environment] was [$($data.ComponentName.$ComponentName.$Environment.DefaultBuild)]" -Verbose
 Write-Verbose -Message "Current  Build in [$environment] is  [$BuildName]" -Verbose
 $data.ComponentName.$ComponentName.$Environment.DefaultBuild = $BuildName
 
-$data | ConvertTo-Json -Depth 5 | Set-Content -Path $BasePath/$ComponentName/$MetaDataFileName -PassThru
 
-Set-AzStorageBlobContent @StorageContainerParams -File $BasePath/$ComponentName/$MetaDataFileName -Blob $ComponentName/$MetaDataFileName -Verbose -Force | Format-Table -AutoSize
+$outFile = Join-Path $destPath $MetaDataFileName
+$data | ConvertTo-Json -Depth 5 | Set-Content -Path $outFile -PassThru
+
+Set-AzStorageBlobContent @StorageContainerParams -File $outFile -Blob "$ComponentName/$MetaDataFileName" -Verbose -Force | Format-Table -AutoSize
 
 if ($?)
 {
