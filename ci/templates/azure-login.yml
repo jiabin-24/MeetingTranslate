@@ -16,6 +16,24 @@
         fi
       fi
     - |
+      if ! command -v bicep >/dev/null 2>&1; then
+        if command -v dotnet >/dev/null 2>&1; then
+          echo "Bicep not found — installing via 'dotnet tool'"
+          dotnet tool install -g Bicep || dotnet tool update -g Bicep || true
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          if [ -f "$HOME/.dotnet/tools/bicep" ]; then
+            ln -sf "$HOME/.dotnet/tools/bicep" /usr/local/bin/bicep || true
+            echo "Bicep installed to $HOME/.dotnet/tools and linked to /usr/local/bin/bicep"
+          else
+            echo "Warning: bicep binary not found after install; New-AzDeployment may fail"
+          fi
+        else
+          echo "dotnet not found; cannot install Bicep. New-AzDeployment may fail"
+        fi
+      else
+        echo "bicep already installed: $(command -v bicep)"
+      fi
+    - |
       cat > /tmp/az_login.ps1 <<'PS1'
       $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
       $clientId = $creds.clientId
