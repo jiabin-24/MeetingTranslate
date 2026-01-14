@@ -11,6 +11,7 @@ namespace EchoBot.Models
             [property: JsonPropertyName("type")] string Type,          // "caption"
             [property: JsonPropertyName("meetingId")] string MeetingId,
             [property: JsonPropertyName("speaker")] string? Speaker,
+            [property: JsonPropertyName("speakerId")] string? SpeakerId,
             [property: JsonPropertyName("sourceLang")] string SourceLang,          // 源语言，如 "en" / "zh"
             [property: JsonPropertyName("text")] Dictionary<string, string> Text,
             [property: JsonPropertyName("isFinal")] bool IsFinal,         // partial / final

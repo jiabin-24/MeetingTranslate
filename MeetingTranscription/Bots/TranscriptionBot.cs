@@ -100,8 +100,6 @@ namespace MeetingTranscription.Bots
                 await SendAIMessage(turnContext, cancellationToken);
                 return;
             }
-            var replyText = $"Echo: {turnContext.Activity.Text}";
-            await turnContext.SendActivityAsync(MessageFactory.Text(replyText, replyText), cancellationToken);
         }
 
         private async Task SendAIMessage(ITurnContext<IMessageActivity> turnContext, CancellationToken cancellationToken)

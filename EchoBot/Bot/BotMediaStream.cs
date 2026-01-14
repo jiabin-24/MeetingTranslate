@@ -23,9 +23,6 @@ namespace EchoBot.Bot
         /// </summary>
         internal List<IParticipant> participants;
 
-        // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap;
-
         /// <summary>
         /// The audio socket
         /// </summary>
@@ -56,7 +53,7 @@ namespace EchoBot.Bot
             ILocalMediaSession mediaSession,
             string callId,
             string threadId,
-            ConcurrentDictionary<string, string> audioToIdentityMap,
+            ConcurrentDictionary<string, Models.Participant> audioToIdentityMap,
             IGraphLogger graphLogger,
             AppSettings settings
         )
@@ -69,8 +66,6 @@ namespace EchoBot.Bot
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
 
             this.participants = new List<IParticipant>();
-            _audioToIdentityMap = audioToIdentityMap;
-
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 

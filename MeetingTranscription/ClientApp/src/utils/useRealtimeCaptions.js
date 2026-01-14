@@ -359,7 +359,7 @@ export function useRealtimeCaptions(opts) {
         if (opts.meetingId) {
             (async () => {
                 try {
-                    const url = `https://localhost:9441/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
                     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
                     if (!resp.ok) return;
                     const data = await resp.json();
@@ -422,6 +422,17 @@ export function useRealtimeCaptions(opts) {
                         if (msg && msg.type === 'caption') {
                             setLines(prev => mergeCaptions(prev, msg));
                         } else if (msg && msg.type === 'audio') {
+                            // 如果消息来自本地用户，则跳过其音频（只播放其他人的音频）
+                            try {
+                                const currentUserId = opts.currentUser.id;
+                                if (currentUserId) {
+                                    if (String(msg.speakerId) === String(currentUserId)) {
+                                        try { console.log('Skipping audio from local user', currentUserId); } catch (_) {}
+                                        return;
+                                    }
+                                }
+                            } catch (_) {}
+
                             // Prefer an explicit audioId to correlate metadata->binary; fall back to meetingId
                             const audioKey = msg.audioId || msg.meetingId || (`audio:${Date.now()}`);
                             // server will send a metadata JSON followed by one or more binary frames

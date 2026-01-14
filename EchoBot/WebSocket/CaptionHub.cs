@@ -134,10 +134,10 @@ namespace EchoBot.WebSocket
             }
         }
 
-        public async Task BroadcastAudioAsync(string meetingId, string audioId, byte[] audio, string contentType, int length, string headerHex)
+        public async Task BroadcastAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex)
         {
             // First send a small JSON metadata header so clients know an audio blob is coming
-            var meta = JsonSerializer.Serialize(new { type = "audio", meetingId, audioId, contentType, length, headerHex, isFinal = true });
+            var meta = JsonSerializer.Serialize(new { type = "audio", meetingId, audioId, speakerId, lang, contentType, length, headerHex, isFinal = true });
             var metaBytes = Encoding.UTF8.GetBytes(meta);
 
             foreach (var kv in _clients)

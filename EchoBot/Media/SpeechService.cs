@@ -31,7 +31,7 @@ namespace EchoBot.Media
         protected bool _isDraining;
 
         // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap;
+        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap;
 
         /// <summary>
         /// The logger
@@ -54,7 +54,7 @@ namespace EchoBot.Media
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, ConcurrentDictionary<string, string> audioToIdentityMap, string threadId = "")
+        public SpeechService(AppSettings settings, ConcurrentDictionary<string, Models.Participant> audioToIdentityMap, string threadId = "")
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
@@ -204,7 +204,6 @@ namespace EchoBot.Media
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                             var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
-                            await TextToSpeech(translated["en"]);
                             await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original);
                         }
                         catch (Exception ex)
@@ -267,7 +266,7 @@ namespace EchoBot.Media
             _isDraining = false;
         }
 
-        private async Task TextToSpeech(string text)
+        private async Task TextToSpeech(string text, string lang, string speakerId)
         {
             // convert the text to speech
             SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(text);
@@ -295,8 +294,6 @@ namespace EchoBot.Media
                         audioBytes = ms.ToArray();
                     }
 
-                    _logger.LogDebug($"TTS audio bytes length={audioBytes?.Length ?? 0}");
-
                     // Create bot media buffers from the WAV bytes
                     // compute header hex for debugging
                     var headerHex = string.Empty;
@@ -307,7 +304,7 @@ namespace EchoBot.Media
                     var contentType = "audio/wav";
                     var audioId = Guid.NewGuid().ToString();
                     // publish to connected websocket clients (include length and header sample)
-                    await _wsPublisher.PublishAudioAsync(_threadId, audioId, audioBytes, contentType, audioBytes.Length, headerHex);
+                    await _wsPublisher.PublishAudioAsync(_threadId, audioId, audioBytes, speakerId, lang, contentType, audioBytes.Length, headerHex);
                 }
                 catch (Exception ex)
                 {
@@ -322,18 +319,19 @@ namespace EchoBot.Media
             long endMs = startMs + (long)duration.TotalMilliseconds;
 
             // determine speaker label from active speakers if available
-            string speakerLabel = "Bot";
+            var speaker = new Models.Participant { DisplayName = "Bot" };
             if (_activeSpeakers is { Length: > 0 })
             {
                 var audioId = _activeSpeakers[0].ToString();
-                if (!_audioToIdentityMap.TryGetValue(audioId, out speakerLabel))
-                    speakerLabel = $"Speaker-{_activeSpeakers[0]}";
+                if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
+                    speaker = new Models.Participant { DisplayName = $"Speaker-{_activeSpeakers[0]}" };
             }
 
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: _threadId,
-                Speaker: speakerLabel,
+                Speaker: speaker.DisplayName,
+                SpeakerId: speaker.Id,
                 SourceLang: sourceLang,
                 Text: BuildTextDictionary(captions, sourceLang, sourceText),
                 IsFinal: true,
@@ -347,6 +345,8 @@ namespace EchoBot.Media
             var listKey = $"list:{_threadId}";
             await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
             await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
+
+            await TextToSpeech(captions["en"], "en", speaker.Id);
         }
 
         private Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)

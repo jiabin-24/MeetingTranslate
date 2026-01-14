@@ -3,8 +3,8 @@ import { useRealtimeCaptions } from '../utils/useRealtimeCaptions';
 
 export default function CaptionsPanel(props) {
 
-    const { url, meetingId, targetLang } = props;
-    const { lines, unlockAudio, stopAudio } = useRealtimeCaptions({ url, meetingId, targetLang });
+    const { url, meetingId, targetLang, currentUser } = props;
+    const { lines, unlockAudio, stopAudio } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
     const containerRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);

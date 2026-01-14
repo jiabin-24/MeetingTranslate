@@ -11,8 +11,8 @@ public class CaptionPublisher
         return _hub.BroadcastAsync(payload);
     }
 
-    public Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string contentType, int length, string headerHex)
+    public Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex)
     {
-        return _hub.BroadcastAudioAsync(meetingId, audioId, audio, contentType, length, headerHex);
+        return _hub.BroadcastAudioAsync(meetingId, audioId, audio, speakerId, lang, contentType, length, headerHex);
     }
 }

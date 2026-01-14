@@ -27,7 +27,7 @@ namespace EchoBot.Bot
         public BotMediaStream BotMediaStream { get; private set; }
 
         // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, string> _audioToIdentityMap = new ConcurrentDictionary<string, string>();
+        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new ConcurrentDictionary<string, Models.Participant>();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
@@ -187,7 +187,8 @@ namespace EchoBot.Bot
             var participantSendCapableAudioStream = participant.Resource.MediaStreams.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
             if (participantSendCapableAudioStream != null)
             {
-                _audioToIdentityMap.TryAdd(participantSendCapableAudioStream.SourceId!, participant.Resource.Info.Identity.User.DisplayName ?? participantSendCapableAudioStream.SourceId!);
+                _audioToIdentityMap.TryAdd(participantSendCapableAudioStream.SourceId!, participant.Resource.Info.Identity.User != null ? IdentityToParticipant(participant.Resource.Info.Identity.User)
+                    : new Models.Participant { Id = participantSendCapableAudioStream.SourceId! });
             }
         }
 
@@ -198,6 +199,16 @@ namespace EchoBot.Bot
             {
                 _audioToIdentityMap.TryRemove(participantSendCapableAudioStream.SourceId!, out _);
             }
+        }
+
+        private static Models.Participant IdentityToParticipant(Identity identity)
+        {
+            var participant = new Models.Participant
+            {
+                Id = identity.Id!,
+                DisplayName = identity?.DisplayName ?? string.Empty
+            };
+            return participant;
         }
     }
 }

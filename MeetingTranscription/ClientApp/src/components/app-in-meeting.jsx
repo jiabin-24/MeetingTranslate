@@ -5,12 +5,14 @@ import CaptionsPanel from "./captionsPanel";
 // Handles redirection after successful/failure sign in attempt.
 const AppInMeeting = props => {
     const [meetingId, setMeetingId] = useState(null);
+    const [currentUser, setCurrentUser] = useState(null);
 
     useEffect(() => {
         microsoftTeams.app.initialize().then(() => {
             microsoftTeams.app.getContext().then((context) => {
                 if (context && context.chat && context.chat.id) {
                     setMeetingId(context.chat.id);
+                    setCurrentUser(context.user);
                 }
             });
         });
@@ -36,6 +38,7 @@ const AppInMeeting = props => {
                     url={wsUrl}
                     meetingId={meetingId}
                     targetLang={targetLang}
+                    currentUser={currentUser}
                 />
             ) : (
                 <div className="loading-meeting">Waiting for meeting context...</div>
