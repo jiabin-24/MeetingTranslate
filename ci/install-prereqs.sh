@@ -14,22 +14,42 @@ fi
 if command -v az >/dev/null 2>&1; then
   echo "[install-prereqs] az present: $(command -v az)"
 else
-  echo "[install-prereqs] az not found — installing azure-cli via Microsoft repo"
-  if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -y
-    apt-get install -y wget apt-transport-https ca-certificates gnupg curl
-    wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
-    dpkg -i /tmp/packages-microsoft-prod.deb || true
-    apt-get update -y
-    apt-get install -y azure-cli || echo "[install-prereqs] Failed to install azure-cli via apt"
+  echo "[install-prereqs] az not found — attempting official InstallAzureCLIDeb script"
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+      echo "[install-prereqs] running installer with sudo"
+      if command -v curl >/dev/null 2>&1; then
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash || echo "[install-prereqs] InstallAzureCLIDeb failed"
+      else
+        wget -qO- https://aka.ms/InstallAzureCLIDeb | sudo bash || echo "[install-prereqs] InstallAzureCLIDeb failed"
+      fi
+    else
+      echo "[install-prereqs] running installer as root or without sudo"
+      if command -v curl >/dev/null 2>&1; then
+        curl -sL https://aka.ms/InstallAzureCLIDeb | bash || echo "[install-prereqs] InstallAzureCLIDeb failed"
+      else
+        wget -qO- https://aka.ms/InstallAzureCLIDeb | bash || echo "[install-prereqs] InstallAzureCLIDeb failed"
+      fi
+    fi
   else
-    echo "[install-prereqs] cannot install azure-cli (apt-get not available)"
+    echo "[install-prereqs] curl/wget not available; cannot run InstallAzureCLIDeb script"
   fi
 fi
 
 if command -v az >/dev/null 2>&1; then
   echo "[install-prereqs] running az bicep install if needed"
   az bicep install || echo "[install-prereqs] az bicep install failed"
+fi
+
+# Ensure common bicep locations are on PATH so pwsh can find the binary
+if ! command -v bicep >/dev/null 2>&1; then
+  for d in "$HOME/.azure/bin" "$HOME/.local/bin" "$HOME/.dotnet/tools" /usr/local/bin; do
+    if [ -x "$d/bicep" ] || [ -f "$d/bicep" ]; then
+      export PATH="$d:$PATH"
+      echo "[install-prereqs] added $d to PATH"
+      break
+    fi
+  done
 fi
 
 echo "[install-prereqs] bicep path: $(command -v bicep 2>/dev/null || echo not-found)"
