@@ -1,5 +1,6 @@
 # build.yml - contains the build_job definition
 build_job:
+  image: mcr.microsoft.com/powershell:7.5-ubuntu-22.04
   extends: .azure_login
   stage: run
   interruptible: true
