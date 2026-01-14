@@ -33,7 +33,7 @@ build_job:
       Write-Host $env:CI_PROJECT_DIR
       PS1
     - pwsh -NoProfile -NonInteractive -File /tmp/build_steps.ps1
-    
+
     - |
       cat > /tmp/run_sync_update.ps1 <<'PS1'
       $Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location }
@@ -46,7 +46,7 @@ build_job:
 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
-      when: always
+      when: manual
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-      when: always
+      when: manual
     - when: manual
