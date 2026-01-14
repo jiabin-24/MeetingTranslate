@@ -1,5 +1,6 @@
 # deploy.yml - contains the deploy_environment job (manual trigger)
 deploy_environment:
+  image: mcr.microsoft.com/azure-cli
   extends: .azure_login
   stage: run
   interruptible: true

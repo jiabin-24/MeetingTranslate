@@ -2,38 +2,11 @@
 # This hidden job provides a reusable Azure login step via `before_script`.
 .azure_login:
   before_script:
+    - bash ci/install-prereqs.sh
     - |
-      if ! command -v pwsh >/dev/null 2>&1; then
-        if command -v apt-get >/dev/null 2>&1; then
-          - |
-            if ! command -v bicep >/dev/null 2>&1; then
-              echo "Bicep not found — attempting to install via 'az bicep install'"
-              # Ensure az CLI exists; if not, try apt install (we configured MS packages earlier)
-              if ! command -v az >/dev/null 2>&1; then
-                if command -v apt-get >/dev/null 2>&1; then
-                  echo "az CLI not found — installing azure-cli via apt"
-                  apt-get update -y
-                  apt-get install -y azure-cli || echo "Failed to install azure-cli via apt"
-                else
-                  echo "az CLI not available and apt-get missing; cannot run 'az bicep install'"
-                fi
-              fi
-
-              if command -v az >/dev/null 2>&1; then
-                echo "Running: az bicep install"
-                az bicep install || echo "az bicep install failed"
-              else
-                echo "az CLI still not available; skipping az bicep install"
-              fi
-
-              if command -v bicep >/dev/null 2>&1; then
-                echo "bicep available at: $(command -v bicep)"
-              else
-                echo "Warning: bicep still not found after az bicep install attempt; New-AzDeployment may fail"
-              fi
-            else
-              echo "bicep already installed: $(command -v bicep)"
-            fi
+      cat > /tmp/az_login.ps1 <<'PS1'
+      $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
+      $clientId = $creds.clientId
       $clientSecret = $creds.clientSecret
       $tenantId = $creds.tenantId
       $subscriptionId = $creds.subscriptionId
