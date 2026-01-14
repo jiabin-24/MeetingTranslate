@@ -2,7 +2,7 @@
 # This hidden job provides a reusable Azure login step via `before_script`.
 .azure_login:
   before_script:
-    - bash ci/install-prereqs.sh
+    - . ci/install-prereqs.sh
     - |
       cat > /tmp/az_login.ps1 <<'PS1'
       $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
