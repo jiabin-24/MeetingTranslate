@@ -6,11 +6,65 @@ import { useEffect, useRef, useState } from 'react';
 const _pendingAudioBlobs = [];
 let _audioUnlocked = false;
 let _interactionHandlersInstalled = false;
+let _suppressPlayback = false;
 // Shared AudioContext for decoding/playing when <audio> can't handle the blob
 let _audioCtx = null;
 // Currently playing element / source so we can stop it
 let _currentAudioEl = null;
+let _currentAudioUrl = null;
 let _currentAudioSource = null; // AudioBufferSourceNode
+// Track all created HTMLAudioElements so we can stop leaked ones too
+const _activeAudioEls = new Set();
+// Track active hook instances so stopAudio can clear their internal queues
+const _activeHookInstances = new Set();
+
+// Stop current HTMLAudioElement or WebAudio source but do NOT clear the pending queue.
+function stopCurrentPlayback() {
+    try {
+        try { console.debug('stopCurrentPlayback invoked'); } catch (_) {}
+        // Stop any tracked HTMLAudioElements aggressively
+        try {
+            for (const a of Array.from(_activeAudioEls)) {
+                try { a.pause(); } catch (_) {}
+                try { a.muted = true; } catch (_) {}
+                try { a.volume = 0; } catch (_) {}
+                try { a.currentTime = 0; } catch (_) {}
+                try { a.srcObject = null; } catch (_) {}
+                try { a.src = ''; } catch (_) {}
+                try { a.load(); } catch (_) {}
+                try { _activeAudioEls.delete(a); } catch (_) {}
+            }
+            _currentAudioEl = null;
+        } catch (_) {}
+        // Also try to stop any <audio> elements in the document in case some were created elsewhere
+        try {
+            const els = Array.from(document.getElementsByTagName('audio'));
+            for (const a of els) {
+                try { a.pause(); } catch (_) {}
+                try { a.muted = true; } catch (_) {}
+                try { a.volume = 0; } catch (_) {}
+                try { a.currentTime = 0; } catch (_) {}
+                try { a.srcObject = null; } catch (_) {}
+                try { a.src = ''; } catch (_) {}
+                try { a.load(); } catch (_) {}
+            }
+        } catch (_) {}
+        if (_currentAudioUrl) {
+            try { URL.revokeObjectURL(_currentAudioUrl); } catch (_) {}
+            _currentAudioUrl = null;
+        }
+        // cancel speech synthesis if any
+        try { if (window.speechSynthesis && typeof window.speechSynthesis.cancel === 'function') window.speechSynthesis.cancel(); } catch (_) {}
+        if (_currentAudioSource) {
+            try { _currentAudioSource.onended = null; } catch (_) {}
+            try { _currentAudioSource.stop(); } catch (_) {}
+            try { _currentAudioSource.disconnect(); } catch (_) {}
+            _currentAudioSource = null;
+        }
+    } catch (e) {
+        console.warn('stopCurrentPlayback failed', e);
+    }
+}
 
 function ensureAudioContext() {
     if (!_audioCtx) {
@@ -51,6 +105,8 @@ function setupInteractionUnlock() {
 async function unlockPendingAudio() {
     // Mark unlocked so subsequent plays are allowed
     _audioUnlocked = true;
+    // clear suppression when user explicitly unlocks playback
+    _suppressPlayback = false;
 
     // Resume WebAudio / SpeechSynthesis where applicable
     try {
@@ -86,22 +142,27 @@ async function unlockPendingAudio() {
 // Stop playback and clear queued audio
 function stopAudio() {
     try {
-        // stop current HTMLAudioElement
-        if (_currentAudioEl) {
-            try { _currentAudioEl.pause(); } catch {}
-            try { _currentAudioEl.src = ''; } catch {}
-            try { _currentAudioEl.load(); } catch {}
-            _currentAudioEl = null;
-        }
-        // stop current WebAudio source
-        if (_currentAudioSource) {
-            try { _currentAudioSource.onended = null; } catch {}
-            try { _currentAudioSource.stop(); } catch {}
-            try { _currentAudioSource.disconnect(); } catch {}
-            _currentAudioSource = null;
-        }
-        // clear pending queue
+        try { console.debug('stopAudio invoked'); } catch (_) {}
+        // prevent any further incoming audio from starting
+        _suppressPlayback = true;
+        // stop any currently playing audio (HTMLAudioElements and WebAudio sources)
+        stopCurrentPlayback();
+        // clear pending queue: revoke any object URLs held in the pending queue
+        try {
+            for (const entry of _pendingAudioBlobs) {
+                if (entry && entry.url) {
+                    try { URL.revokeObjectURL(entry.url); } catch (_) {}
+                }
+            }
+        } catch (_) {}
         _pendingAudioBlobs.length = 0;
+        // Clear any partially assembled buffers/queues in active hook instances
+        try {
+            for (const inst of Array.from(_activeHookInstances)) {
+                try { if (inst.audioBuffersRef && inst.audioBuffersRef.current) inst.audioBuffersRef.current.clear(); } catch (_) {}
+                try { if (inst.audioQueueRef && inst.audioQueueRef.current) inst.audioQueueRef.current.length = 0; } catch (_) {}
+            }
+        } catch (_) {}
         try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
     } catch (e) {
         console.warn('stopAudio failed', e);
@@ -112,18 +173,29 @@ function stopAudio() {
 function playAudioUrl(url) {
     return new Promise((resolve, reject) => {
         try {
+            // ensure any previously playing audio is stopped first
+            stopCurrentPlayback();
             const audio = new Audio(url);
+            _activeAudioEls.add(audio);
             _currentAudioEl = audio;
+            _currentAudioUrl = url;
             audio.autoplay = true;
             const cleanup = () => {
                 audio.removeEventListener('ended', onEnd);
                 audio.removeEventListener('error', onError);
+                try { _activeAudioEls.delete(audio); } catch (_) {}
+                if (_currentAudioEl === audio) _currentAudioEl = null;
+                if (_currentAudioUrl === url) { try { URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
             };
             const onEnd = () => { cleanup(); resolve(); };
             const onError = (e) => { cleanup(); reject(e || new Error('Audio playback error')); };
             audio.addEventListener('ended', onEnd);
             audio.addEventListener('error', onError);
             const p = audio.play();
+            if (_suppressPlayback) {
+                try { cleanup(); } catch (_) {}
+                return;
+            }
             if (p && typeof p.catch === 'function') {
                 p.catch(err => {
                     cleanup();
@@ -141,6 +213,9 @@ export function useRealtimeCaptions(opts) {
     const wsRef = useRef(null);
     const audioBuffersRef = useRef(new Map());
     const audioQueueRef = useRef([]);
+    // register this hook instance so module-level stopAudio can clear its queues
+    const _hookInstance = { audioBuffersRef, audioQueueRef };
+    try { _activeHookInstances.add(_hookInstance); } catch (_) {}
     const reconnectRef = useRef(null);
     const backoffRef = useRef(1000); // 指数退避起始 1s
 
@@ -150,7 +225,7 @@ export function useRealtimeCaptions(opts) {
         if (opts.meetingId) {
             (async () => {
                 try {
-                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const url = `https://localhost:9441/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
                     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
                     if (!resp.ok) return;
                     const data = await resp.json();
@@ -228,8 +303,8 @@ export function useRealtimeCaptions(opts) {
                 // binary frames: audio payloads
                 try {
                     const ab = data; // ArrayBuffer
-                    // If audio not unlocked yet, drop incoming binary audio
-                    if (!_audioUnlocked) {
+                    // If audio not unlocked yet or playback suppressed, drop incoming binary audio
+                    if (!_audioUnlocked || _suppressPlayback) {
                         return;
                     }
                     // Correlate this binary frame with the earliest queued audio metadata
@@ -290,12 +365,31 @@ export function useRealtimeCaptions(opts) {
                         }
                         // Try <audio> first. If it fails due to unsupported format, fall back to WebAudio decode.
                         const url = URL.createObjectURL(blob);
+                        // stop any currently playing audio before starting this one
+                        stopCurrentPlayback();
+                        _currentAudioUrl = url;
                         const audio = new Audio(url);
+                        // track current HTMLAudioElement so stopAudio can cancel it
+                        _activeAudioEls.add(audio);
+                        _currentAudioEl = audio;
                         audio.autoplay = true;
-                        audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+                        const cleanupLocalAudio = () => {
+                            try { audio.removeEventListener('ended', onEnd); } catch (_) {}
+                            try { audio.removeEventListener('error', onError); } catch (_) {}
+                            if (_currentAudioEl === audio) _currentAudioEl = null;
+                            if (_currentAudioUrl) { try { URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
+                        };
+                        const onEnd = () => { try { URL.revokeObjectURL(url); } catch (_) {} ; cleanupLocalAudio(); };
+                        const onError = () => { try { URL.revokeObjectURL(url); } catch (_) {} ; cleanupLocalAudio(); };
+                        audio.addEventListener('ended', onEnd);
+                        audio.addEventListener('error', onError);
 
                         const tryPlayAudioElement = () => {
                             const p = audio.play();
+                                if (_suppressPlayback) {
+                                    try { cleanupLocalAudio(); } catch (_) {}
+                                    return;
+                                }
                             if (p && typeof p.catch === 'function') {
                                 p.catch(async (err) => {
                                     // If it's an autoplay/block error, queue the blob
@@ -311,7 +405,9 @@ export function useRealtimeCaptions(opts) {
                                     const name = err && err.name ? err.name : '';
                                     const msg = String(err && err.message ? err.message : '');
                                     if (name === 'NotSupportedError' || /no supported source/.test(msg) || /format/.test(msg)) {
-                                        URL.revokeObjectURL(url);
+                                        // clean up the local audio element and revoke the URL before falling back
+                                        try { cleanupLocalAudio(); } catch (_) {}
+                                        try { URL.revokeObjectURL(url); } catch (_) {}
                                         try {
                                             try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
                                             await playChunksWithWebAudio(entry.chunks);
@@ -320,6 +416,7 @@ export function useRealtimeCaptions(opts) {
                                             console.warn('WebAudio fallback failed', webaudioErr);
                                         }
                                     } else {
+                                        try { cleanupLocalAudio(); } catch (_) {}
                                         console.warn('Audio play failed', err);
                                     }
                                 });
@@ -365,6 +462,7 @@ export function useRealtimeCaptions(opts) {
             if (reconnectRef.current) {
                 window.clearTimeout(reconnectRef.current);
             }
+            try { _activeHookInstances.delete(_hookInstance); } catch (_) {}
         };
     }, [opts.url, opts.meetingId]);
 
@@ -379,6 +477,16 @@ export function useRealtimeCaptions(opts) {
 
     return { lines, unlockAudio, stopAudio };
 }
+
+// Debug helper: call from console to forcibly stop any playback managed here.
+try {
+    if (typeof window !== 'undefined' && !window.__realtimeStopAudio) {
+        window.__realtimeStopAudio = () => {
+            try { stopCurrentPlayback(); } catch (_) {}
+            try { stopAudio(); } catch (_) {}
+        };
+    }
+} catch (_) {}
 
 // 将 final 片段覆盖同时间窗的 partial，减少闪烁
 function mergeCaptions(prev, incoming) {
