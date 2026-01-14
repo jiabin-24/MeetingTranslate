@@ -15,6 +15,22 @@ if command -v az >/dev/null 2>&1; then
   echo "[install-prereqs] az present: $(command -v az)"
 else
   echo "[install-prereqs] az not found — attempting official InstallAzureCLIDeb script"
+  # ensure curl or wget exists; if not, try to install them via apt-get
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+    echo "[install-prereqs] curl/wget not found - attempting to install via apt-get"
+    if command -v apt-get >/dev/null 2>&1; then
+      if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        sudo apt-get update -y
+        sudo apt-get install -y curl wget || echo "[install-prereqs] Failed to install curl/wget via apt"
+      else
+        apt-get update -y
+        apt-get install -y curl wget || echo "[install-prereqs] Failed to install curl/wget via apt"
+      fi
+    else
+      echo "[install-prereqs] apt-get not available; cannot install curl/wget"
+    fi
+  fi
+
   if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
     if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
       echo "[install-prereqs] running installer with sudo"
@@ -32,7 +48,7 @@ else
       fi
     fi
   else
-    echo "[install-prereqs] curl/wget not available; cannot run InstallAzureCLIDeb script"
+    echo "[install-prereqs] curl/wget still not available; cannot run InstallAzureCLIDeb script"
   fi
 fi
 
