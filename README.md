@@ -68,6 +68,7 @@ The Bot requires an SSL certificate signed by a Certificate Authority. If you do
 | SpeechConfigRegion   | The region where the Speech Service is deployed |
 | CustomSpeechEndpoints| The model id of Azure Custom Speech |
 | Translator.Routing   | The category of Azure Custom Translator |
+| Redis.Configuration  | The endpoint of Azure Managed Redis |
 
 ## Deploy
 
@@ -86,26 +87,26 @@ DSC Resources
 ### Deploy the Prerequistes
 
 1. Navigate to the root directory of the sample in PowerShell.
-2. Run `az login` to ensure you are deploying to the correct subscription
+2. Run `az login/Connect-AzAccount` to ensure you are deploying to the correct subscription
     - You need to have the owner role on the subscription/resource group
     - You need permissions to create a Service Principal
 3. Run `.\deploy.ps1 -OrgName <Your 2 - 7 Character Length Letter Abbreviation>`
     - ie .\deploy.ps1 -OrgName TEB -Location eastus2
 ```bash
     # Option 1. Execute all pre-req steps i.e. run setup to deploy
-    . .\deploy.ps1 -orgName <yourOrgName> -Location centralus
+    ./deploy.ps1 -orgName <yourOrgName> -Location centralus
     # E.g.
-    . .\deploy.ps1 -orgName DNA -Location centralus
+    ./deploy.ps1 -orgName DNA -Location centralus
     
     # Option 2. After you have run setup the first time, re-execute setup
-    . .\deploy.ps1 -orgName <yourOrgName> -Location centralus -RunSetup
+    ./deploy.ps1 -orgName <yourOrgName> -Location centralus -RunSetup
     # E.g.
-    . .\deploy.ps1 -orgName DNA -Location centralus -RunSetup
+    ./deploy.ps1 -orgName DNA -Location centralus -RunSetup
     
     # Option 3a. After you have run setup you can deploy from the commandline
-    . .\deploy.ps1 -orgName <yourOrgName> -Location centralus -RunDeployment
+    ./deploy.ps1 -orgName <yourOrgName> -Location centralus -RunDeployment
     # E.g.
-    . .\deploy.ps1 -orgName DNA -Location centralus -RunDeployment
+    ./deploy.ps1 -orgName DNA -Location centralus -RunDeployment
 
     # Option 3b. Alternatively skip 4a, check your code changes in and push to your repo
     # The deployment will exectute via GitHub workflow instead
@@ -159,10 +160,18 @@ The GitHub Action app-infra-release-.yml deploys the infrastructure.
 
 You can also run the infrastructure deployment locally using the -RunDeployment flag.
 ```bash
-.\deploy.ps1 -OrgName TEB -RunDeployment
+./deploy.ps1 -OrgName TEB -RunDeployment
 ```
 
-#### Update DNS
+### Add Redis cache service
+
+In Azure portal, add a instance of `Azure Managed Redis`
+![add-redis](./MeetingTranscription/Images/add-redis.png)
+
+Get redis endpoint and key
+![redis-property](./MeetingTranscription/Images/redis-endpoint.png)
+
+### Update DNS
 Your DNS Name for your bot needs to point to the public load balacer in order to call your bot and have it join a meeting.
   1. Find the public IP resource for the load balancer and copy the DNS name.
   2. Navigate to your DNS settings for your domain and create a new CNAME record. ie CNAME bot acu1-teb-bot-d1-lbplb01-1.eastus2.cloudapp.azure.com
@@ -172,14 +181,24 @@ The GitHub Action app-build-.yml builds the solution and uploads the output to t
 
 ## Experience the application
 
-Add the bot to Meeting.
+Add the bot to Meeting (from calendar).
+![from-calendar](./MeetingTranscription/Images/add-bot-from-calendar.png)
 
+Add the bot from meeting channel
+![from-meeting-channel](./MeetingTranscription/Images/add-bot-from-chat.png)
+
+For developer (upload the zip file)
+![from-channel-develop](./MeetingTranscription/Images/add-bot-from-chat-develop.png)
+
+Add the bot in the meeting
+![add-from-meeting](./MeetingTranscription/Images/add-bot-in-meeting.png)
+![bot-panel](./MeetingTranscription/Images/bot-panel.png)
+
+---
 
 # RSC Enable Configuration  
 
 To enable **Resource Specific Consent (RSC)**, please update the following configuration files:  
-
----
 
 ## 1. Update App Manifest Schema  
 
@@ -232,29 +251,8 @@ Add the following permissions inside the **authorization** section of your `mani
 
 **Note**: If you are facing any issue in your app, please uncomment [this](https://github.com/OfficeDev/Microsoft-Teams-Samples/blob/main/samples/meetings-transcription/csharp/MeetingTranscription/AdapterWithErrorHandler.cs#L23) line and put your debugger for local debug.
 
-## Running the sample.
-
-1. Schedule the meeting and add Meeting Transcript Bot from `Apps` section in that particular scheduled meeting.
-![Add Bot](MeetingTranscription/Images/1.AddMeetingTranscriptBot.PNG)
-
-![AddMeetingGroup](MeetingTranscription/Images/2.AddMeetingGroup.png)
-
-![JoinMeeting](MeetingTranscription/Images/3.JoinMeeting.png)
-
-2. Once meeting started, start the Transcript for the meeting.
-![Start Transcript](MeetingTranscription/Images/4.StartTranscript.png)
-
-3. Once the transcription has started, you can see the live transcription it the meeting UI.
-![Leave Meeting](MeetingTranscription/Images/5.LeaveMeeting.png)
-
-4. Once the Meeting ended, Meeting Transcript Bot will sent a card having a button to open task module.
-![Meeting Transcript Card](MeetingTranscription/Images/6.MeetingTranscriptCard.png)
-
-5. After clicking on `View Transcript` button, you will see the recorded Transcript in the opened Task Module.
-![Transcript Task Module](MeetingTranscription/Images/7.TranscriptTaskModule.png)
-
 ## Interacting with the bot.
 - After uploading the manifest add the bot into meeting.
-- Join meeting and `Start Transcript`
-- Once done, leave the meeting.
-- You will get the card to open task module and see the transcript created.
+- Join meeting and open TransMeet bot
+- Speaking in the meeting
+- You will see the transcription in the bot's panel
