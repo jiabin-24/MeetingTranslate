@@ -12,11 +12,15 @@ let _audioCtx = null;
 // Currently playing element / source so we can stop it
 let _currentAudioEl = null;
 let _currentAudioUrl = null;
+let _urlInUse = false;
 let _currentAudioSource = null; // AudioBufferSourceNode
 // Track all created HTMLAudioElements so we can stop leaked ones too
 const _activeAudioEls = new Set();
 // Track active hook instances so stopAudio can clear their internal queues
 const _activeHookInstances = new Set();
+// Playback queue for sequential playback
+const _playbackQueue = [];
+let _processingQueue = false;
 
 // Stop current HTMLAudioElement or WebAudio source but do NOT clear the pending queue.
 function stopCurrentPlayback() {
@@ -63,6 +67,130 @@ function stopCurrentPlayback() {
         }
     } catch (e) {
         console.warn('stopCurrentPlayback failed', e);
+    }
+}
+
+function isPlaying() {
+    try {
+        if (_urlInUse) return true;
+        if (_currentAudioSource) return true;
+        if (_activeAudioEls.size > 0) return true;
+    } catch (_) {}
+    return false;
+}
+
+function enqueuePlayback(item) {
+    // item: { blob, url, chunks }
+    return new Promise((resolve, reject) => {
+        try {
+            _playbackQueue.push({ item, resolve, reject });
+            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'queued' } })); } catch (_) {}
+            // kick off processing if not already
+            if (!_processingQueue) processPlaybackQueue();
+        } catch (e) {
+            console.warn('enqueuePlayback failed', e);
+            reject(e);
+        }
+    });
+}
+
+async function processPlaybackQueue() {
+    if (_processingQueue) return;
+    _processingQueue = true;
+    try {
+        while (_playbackQueue.length && !_suppressPlayback) {
+            const entry = _playbackQueue.shift();
+            const { item, resolve, reject } = entry;
+            try {
+                // try HTMLAudio first
+                await (async () => {
+                    const { url, blob, chunks } = item || {};
+                    // attempt element playback
+                    await new Promise((res, rej) => {
+                        try {
+                            const audio = new Audio(url);
+                            _activeAudioEls.add(audio);
+                            _currentAudioEl = audio;
+                            _currentAudioUrl = url;
+                            _urlInUse = true;
+                            audio.autoplay = true;
+                            const cleanup = () => {
+                                try { audio.removeEventListener('ended', onEnd); } catch (_) {}
+                                try { audio.removeEventListener('error', onError); } catch (_) {}
+                                try { _activeAudioEls.delete(audio); } catch (_) {}
+                                if (_currentAudioEl === audio) _currentAudioEl = null;
+                                if (_currentAudioUrl === url) { try { if (!_urlInUse) URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
+                            };
+                            const onEnd = () => { _urlInUse = false; try { URL.revokeObjectURL(url); } catch (_) {} ; cleanup(); res(); };
+                            const onError = (e) => { _urlInUse = false; try { URL.revokeObjectURL(url); } catch (_) {} ; cleanup(); rej(e || new Error('Audio playback error')); };
+                            audio.addEventListener('ended', onEnd);
+                            audio.addEventListener('error', onError);
+                            const p = audio.play();
+                            if (p && typeof p.catch === 'function') {
+                                p.catch(err => {
+                                    cleanup();
+                                    rej(err);
+                                });
+                            }
+                        } catch (e) {
+                            rej(e);
+                        }
+                    });
+                })();
+                try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
+                resolve();
+            } catch (e) {
+                // If autoplay blocked, push to pending and stop processing until unlock
+                if (isNotAllowedError(e)) {
+                    try { _pendingAudioBlobs.push({ blob: item && item.blob ? item.blob : null, url: item && item.url ? item.url : null }); } catch (_) {}
+                    try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'queued' } })); } catch (_) {}
+                    setupInteractionUnlock();
+                    // reject this entry so caller knows it didn't complete
+                    try { entry.reject && entry.reject(e); } catch (_) {}
+                    break; // stop processing until unlock
+                }
+
+                // If NotSupported or decode error, try WebAudio fallback for this item
+                try {
+                    try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
+                    // If chunks are provided (assembled frames), use them; otherwise try to decode blob or fetch the url
+                    if (item && item.chunks && item.chunks.length) {
+                        await playChunksWithWebAudio(item.chunks);
+                    } else if (item && item.blob) {
+                        try {
+                            try { console.debug('Falling back to WebAudio from blob'); } catch (_) {}
+                            const ab = await item.blob.arrayBuffer();
+                            await playChunksWithWebAudio([ab]);
+                        } catch (blobErr) {
+                            console.warn('Blob->WebAudio decode failed', blobErr);
+                            throw blobErr;
+                        }
+                    } else if (item && item.url) {
+                        try {
+                            try { console.debug('Falling back to WebAudio from url', item.url); } catch (_) {}
+                            const resp = await fetch(item.url);
+                            const ab = await resp.arrayBuffer();
+                            await playChunksWithWebAudio([ab]);
+                        } catch (urlErr) {
+                            console.warn('URL->WebAudio fetch/decode failed', urlErr);
+                            throw urlErr;
+                        }
+                    } else {
+                        // nothing to decode
+                        throw new Error('No audio data available for WebAudio fallback');
+                    }
+                    try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
+                    resolve();
+                } catch (we) {
+                    console.warn('Playback of queued item failed', we);
+                    try { entry.reject && entry.reject(we); } catch (_) {}
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('processPlaybackQueue failed', e);
+    } finally {
+        _processingQueue = false;
     }
 }
 
@@ -125,16 +253,22 @@ async function unlockPendingAudio() {
         const blob = entry && entry.blob ? entry.blob : entry;
         let url = entry && entry.url ? entry.url : null;
         if (!url) url = URL.createObjectURL(blob);
-        try {
-            // notify UI that playback is starting
-            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
-            await playAudioUrl(url);
-            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
+            try {
+            // enqueue playback instead of immediate play
+            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'queued' } })); } catch (_) {}
+            enqueuePlayback({ blob, url, chunks: null });
         } catch (e) {
             // If it still fails, just drop it
             console.warn('Playback of queued audio failed', e);
         } finally {
-            try { URL.revokeObjectURL(url); } catch {}
+            try {
+                if (_urlInUse) {
+                    // defer revoke slightly if playback still using it
+                    setTimeout(() => { try { if (!_urlInUse) URL.revokeObjectURL(url); } catch (_) {} }, 200);
+                } else {
+                    try { URL.revokeObjectURL(url); } catch (_) {}
+                }
+            } catch (_) {}
         }
     }
 }
@@ -173,8 +307,7 @@ function stopAudio() {
 function playAudioUrl(url) {
     return new Promise((resolve, reject) => {
         try {
-            // ensure any previously playing audio is stopped first
-            stopCurrentPlayback();
+            // Do not interrupt existing playback here; queueing should be used for sequential playback
             const audio = new Audio(url);
             _activeAudioEls.add(audio);
             _currentAudioEl = audio;
@@ -185,12 +318,13 @@ function playAudioUrl(url) {
                 audio.removeEventListener('error', onError);
                 try { _activeAudioEls.delete(audio); } catch (_) {}
                 if (_currentAudioEl === audio) _currentAudioEl = null;
-                if (_currentAudioUrl === url) { try { URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
+                if (_currentAudioUrl === url) { try { if (!_urlInUse) URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
             };
-            const onEnd = () => { cleanup(); resolve(); };
+            const onEnd = () => { _urlInUse = false; cleanup(); resolve(); };
             const onError = (e) => { cleanup(); reject(e || new Error('Audio playback error')); };
             audio.addEventListener('ended', onEnd);
             audio.addEventListener('error', onError);
+            _urlInUse = true;
             const p = audio.play();
             if (_suppressPlayback) {
                 try { cleanup(); } catch (_) {}
@@ -365,70 +499,9 @@ export function useRealtimeCaptions(opts) {
                         }
                         // Try <audio> first. If it fails due to unsupported format, fall back to WebAudio decode.
                         const url = URL.createObjectURL(blob);
-                        // stop any currently playing audio before starting this one
-                        stopCurrentPlayback();
-                        _currentAudioUrl = url;
-                        const audio = new Audio(url);
-                        // track current HTMLAudioElement so stopAudio can cancel it
-                        _activeAudioEls.add(audio);
-                        _currentAudioEl = audio;
-                        audio.autoplay = true;
-                        const cleanupLocalAudio = () => {
-                            try { audio.removeEventListener('ended', onEnd); } catch (_) {}
-                            try { audio.removeEventListener('error', onError); } catch (_) {}
-                            if (_currentAudioEl === audio) _currentAudioEl = null;
-                            if (_currentAudioUrl) { try { URL.revokeObjectURL(_currentAudioUrl); } catch (_) {} ; _currentAudioUrl = null; }
-                        };
-                        const onEnd = () => { try { URL.revokeObjectURL(url); } catch (_) {} ; cleanupLocalAudio(); };
-                        const onError = () => { try { URL.revokeObjectURL(url); } catch (_) {} ; cleanupLocalAudio(); };
-                        audio.addEventListener('ended', onEnd);
-                        audio.addEventListener('error', onError);
-
-                        const tryPlayAudioElement = () => {
-                            const p = audio.play();
-                                if (_suppressPlayback) {
-                                    try { cleanupLocalAudio(); } catch (_) {}
-                                    return;
-                                }
-                            if (p && typeof p.catch === 'function') {
-                                p.catch(async (err) => {
-                                    // If it's an autoplay/block error, queue the blob
-                                    if (isNotAllowedError(err)) {
-                                        // keep the url so it can be played later
-                                        _pendingAudioBlobs.push({ blob, url });
-                                        try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'queued' } })); } catch (_) {}
-                                        setupInteractionUnlock();
-                                        return;
-                                    }
-
-                                    // If it's NotSupportedError or similar, try WebAudio
-                                    const name = err && err.name ? err.name : '';
-                                    const msg = String(err && err.message ? err.message : '');
-                                    if (name === 'NotSupportedError' || /no supported source/.test(msg) || /format/.test(msg)) {
-                                        // clean up the local audio element and revoke the URL before falling back
-                                        try { cleanupLocalAudio(); } catch (_) {}
-                                        try { URL.revokeObjectURL(url); } catch (_) {}
-                                        try {
-                                            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) {}
-                                            await playChunksWithWebAudio(entry.chunks);
-                                            try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'idle' } })); } catch (_) {}
-                                        } catch (webaudioErr) {
-                                            console.warn('WebAudio fallback failed', webaudioErr);
-                                        }
-                                    } else {
-                                        try { cleanupLocalAudio(); } catch (_) {}
-                                        console.warn('Audio play failed', err);
-                                    }
-                                });
-                            }
-                        };
-
-                        if (_audioUnlocked) {
-                            tryPlayAudioElement();
-                        } else {
-                            // Attempt immediate play; if blocked we'll queue and install unlock handlers
-                            tryPlayAudioElement();
-                        }
+                        // enqueue assembled audio for sequential playback
+                        try { console.debug('Enqueuing assembled audio', { foundKey, chunkCount: entry.chunks.length, mergedBytes: merged.length }); } catch (_) {}
+                        enqueuePlayback({ blob, url, chunks: entry.chunks.slice() });
                         audioBuffersRef.current.delete(foundKey);
                     }
                 } catch (e) {
@@ -528,13 +601,14 @@ async function playChunksWithWebAudio(chunks) {
 
     // Try decoding (may throw if format unsupported)
     try {
+        try { console.debug('Decoding audio buffer for WebAudio, bytes:', merged.length); } catch (_) {}
         const audioBuffer = await ctx.decodeAudioData(merged.buffer.slice(0));
         const src = ctx.createBufferSource();
         _currentAudioSource = src;
         src.buffer = audioBuffer;
         src.connect(ctx.destination);
         return new Promise((resolve) => {
-            src.onended = () => { try { src.disconnect(); } catch {} ; _currentAudioSource = null; resolve(); };
+            src.onended = () => { try { src.disconnect(); } catch {} ; try { console.debug('WebAudio source ended'); } catch (_) {} ; _currentAudioSource = null; resolve(); };
             src.start(0);
         });
     } catch (e) {
