@@ -30,12 +30,27 @@ deploy_environment:
     - dpkg -i /tmp/packages-microsoft-prod.deb || true
     - apt-get update -y
     - apt-get install -y powershell dotnet-sdk-8.0 nodejs npm || true
-    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Preparing Linux environment...'; if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { Install-Module -Name Az -Scope CurrentUser -Force -AllowClobber }"
+    - pwsh -NoProfile -NonInteractive -Command 'Write-Host "Preparing Linux environment..."; if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { Install-Module -Name Az -Scope CurrentUser -Force -AllowClobber }'
   script:
     # Ensure Az module is available, log in using the service principal JSON stored in
     # the CI variable `AZURE_CREDENTIALS_NIUAI_BOT`, then run the original deployment script.
-    - pwsh -NoProfile -NonInteractive -Command "try { if (-not (Get-Module -ListAvailable -Name Az)) { Install-Module -Name Az -Force -Scope CurrentUser -AllowClobber } Import-Module Az } catch { Write-Host 'Failed to install/import Az module:'; throw }"
-    - pwsh -NoProfile -NonInteractive -Command "$creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json; $clientId = $creds.clientId; $clientSecret = $creds.clientSecret; $tenantId = $creds.tenantId; $subscriptionId = $creds.subscriptionId; $securePwd = ConvertTo-SecureString $clientSecret -AsPlainText -Force; $psCred = New-Object System.Management.Automation.PSCredential($clientId, $securePwd); Connect-AzAccount -ServicePrincipal -Credential $psCred -Tenant $tenantId; Set-AzContext -Subscription $subscriptionId; $Params = @{ OrgName = $env:ORG_NAME; Location = $env:LOCATION; FullUpload = $true }; ./ADF/main.ps1 @Params; if ($Error.Count -gt 0) { throw $Error[0] }"
+    - pwsh -NoProfile -NonInteractive -Command 'try { if (-not (Get-Module -ListAvailable -Name Az)) { Install-Module -Name Az -Force -Scope CurrentUser -AllowClobber } Import-Module Az } catch { Write-Host "Failed to install/import Az module:"; throw }'
+    - |
+      cat > /tmp/az_login_deploy.ps1 <<'PS1'
+      $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
+      $clientId = $creds.clientId
+      $clientSecret = $creds.clientSecret
+      $tenantId = $creds.tenantId
+      $subscriptionId = $creds.subscriptionId
+      $securePwd = ConvertTo-SecureString $clientSecret -AsPlainText -Force
+      $psCred = New-Object System.Management.Automation.PSCredential($clientId, $securePwd)
+      Connect-AzAccount -ServicePrincipal -Credential $psCred -Tenant $tenantId
+      Set-AzContext -Subscription $subscriptionId
+      $Params = @{ OrgName = $env:ORG_NAME; Location = $env:LOCATION; FullUpload = $true }
+      ./ADF/main.ps1 @Params
+      if ($Error.Count -gt 0) { throw $Error[0] }
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/az_login_deploy.ps1
 
 # Build job converted from .github/workflows/echobot-build-NIUAI.yml
 build_job:
@@ -50,13 +65,43 @@ build_job:
     Location: "eastasia"
   
   script:
-    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Create build directory'; New-Item -ItemType Directory -Path \"${env:CI_PROJECT_DIR}\${env:Base}\${env:Component}\${env:BuildName}\" -Force | Out-Null"
-    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Install/Check Node and build frontend'; if (Test-Path -Path 'MeetingTranscription/ClientApp/package-lock.json') { Push-Location MeetingTranscription/ClientApp; npm ci; npm run build; Pop-Location } else { Write-Host 'No Node frontend detected (package-lock.json missing)' }"
-    - pwsh -NoProfile -NonInteractive -Command "Write-Host 'Publish .NET project'; dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o \"${env:CI_PROJECT_DIR}\${env:Base}\${env:Component}\${env:BuildName}\""
-    - pwsh -NoProfile -NonInteractive -Command "Get-ChildItem -Path \"${env:CI_PROJECT_DIR}\${env:Base}\${env:Component}\${env:BuildName}\"; Write-Host $env:CI_PROJECT_DIR"
+    - |
+      cat > /tmp/build_steps.ps1 <<'PS1'
+      Write-Host 'Create build directory'
+      New-Item -ItemType Directory -Path "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}" -Force | Out-Null
+
+      Write-Host 'Install/Check Node and build frontend'
+      if (Test-Path -Path 'MeetingTranscription/ClientApp/package-lock.json') {
+        Push-Location MeetingTranscription/ClientApp
+        npm ci
+        npm run build
+        Pop-Location
+      } else {
+        Write-Host 'No Node frontend detected (package-lock.json missing)'
+      }
+
+      Write-Host 'Publish .NET project'
+      dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}"
+
+      Get-ChildItem -Path "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}"
+      Write-Host $env:CI_PROJECT_DIR
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/build_steps.ps1
 
     # Login to Azure using the file variable AZURE_CREDENTIALS_FILE (GitLab CI job-level file variable)
-    - pwsh -NoProfile -NonInteractive -Command "$creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json; $clientId = $creds.clientId; $clientSecret = $creds.clientSecret; $tenantId = $creds.tenantId; $subscriptionId = $creds.subscriptionId; $securePwd = ConvertTo-SecureString $clientSecret -AsPlainText -Force; $psCred = New-Object System.Management.Automation.PSCredential($clientId, $securePwd); Connect-AzAccount -ServicePrincipal -Credential $psCred -Tenant $tenantId; Set-AzContext -Subscription $subscriptionId;"
+    - |
+      cat > /tmp/az_login_build.ps1 <<'PS1'
+      $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
+      $clientId = $creds.clientId
+      $clientSecret = $creds.clientSecret
+      $tenantId = $creds.tenantId
+      $subscriptionId = $creds.subscriptionId
+      $securePwd = ConvertTo-SecureString $clientSecret -AsPlainText -Force
+      $psCred = New-Object System.Management.Automation.PSCredential($clientId, $securePwd)
+      Connect-AzAccount -ServicePrincipal -Credential $psCred -Tenant $tenantId
+      Set-AzContext -Subscription $subscriptionId
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/az_login_build.ps1
 
     # Upload build artifacts and update metadata using the project's PowerShell scripts
     - pwsh -NoProfile -NonInteractive -Command "$Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location }; & ./ADF/release-az/Sync-AzBuildComponent.ps1 @Params"
