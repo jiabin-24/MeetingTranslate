@@ -5,14 +5,10 @@ stages:
 variables:
   ORG_NAME: "NIUAI"
   LOCATION: "eastasia"
-  DOTNET_VERSION: "8.0.100"
-  NODE_VERSION: "18.20.4"
 
 # Environment deploy job - runs on a Windows runner.
 deploy_environment:
   stage: deploy
-  tags:
-    - linux
   interruptible: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
@@ -44,8 +40,6 @@ deploy_environment:
 # Build job converted from .github/workflows/echobot-build-NIUAI.yml
 build_job:
   stage: build
-  tags:
-    - linux
   interruptible: true
   variables:
     Base: "publish"
