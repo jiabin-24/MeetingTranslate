@@ -118,8 +118,15 @@ build_job:
     - pwsh -NoProfile -NonInteractive -File /tmp/az_login_build.ps1
 
     # Upload build artifacts and update metadata using the project's PowerShell scripts
-    - pwsh -NoProfile -NonInteractive -Command "$Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location }; & ./ADF/release-az/Sync-AzBuildComponent.ps1 @Params"
-    - pwsh -NoProfile -NonInteractive -Command "$Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location; Environment = $env:Environment }; & ./ADF/release-az/Update-AzBuildMetaData.ps1 @Params"
+    - |
+      cat > /tmp/run_sync_update.ps1 <<'PS1'
+      $Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location }
+      & ./ADF/release-az/Sync-AzBuildComponent.ps1 @Params
+
+      $Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location; Environment = $env:Environment }
+      & ./ADF/release-az/Update-AzBuildMetaData.ps1 @Params
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/run_sync_update.ps1
 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
