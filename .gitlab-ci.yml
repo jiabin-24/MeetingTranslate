@@ -14,7 +14,7 @@ before_script:
   - dpkg -i /tmp/packages-microsoft-prod.deb || true
   - apt-get update -y
   - apt-get install -y powershell dotnet-sdk-8.0 nodejs npm || true
-  - pwsh -NoProfile -NonInteractive -Command 'Write-Host "Preparing Linux environment..."; if (-not (Get-Module -ListAvailable -Name Az.Accounts)) { Install-Module -Name Az -Scope CurrentUser -Force -AllowClobber }'
+  # PowerShell will be installed by the template when needed on runners that support apt-get.
 
 # Include job definitions from ci/ for distribution and easier management.
 include:

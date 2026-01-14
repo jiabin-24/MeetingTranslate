@@ -2,7 +2,19 @@
 # This hidden job provides a reusable Azure login step via `before_script`.
 .azure_login:
   before_script:
-    - pwsh -NoProfile -NonInteractive -Command 'try { if (-not (Get-Module -ListAvailable -Name Az)) { Install-Module -Name Az -Force -Scope CurrentUser -AllowClobber } Import-Module Az } catch { Write-Host "Failed to install/import Az module:"; throw }'
+    - |
+      if ! command -v pwsh >/dev/null 2>&1; then
+        if command -v apt-get >/dev/null 2>&1; then
+          apt-get update -y
+          apt-get install -y wget apt-transport-https ca-certificates gnupg curl
+          wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+          dpkg -i /tmp/packages-microsoft-prod.deb || true
+          apt-get update -y
+          apt-get install -y powershell || { echo "Failed to install powershell"; exit 1; }
+        else
+          echo "pwsh is not available and apt-get is missing; cannot install pwsh on this runner"; exit 1
+        fi
+      fi
     - |
       cat > /tmp/az_login.ps1 <<'PS1'
       $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
