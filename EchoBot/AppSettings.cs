@@ -46,12 +46,6 @@ namespace EchoBot
         public int BotInternalPort { get; set; }
 
         /// <summary>
-        /// Gets or sets if the bot should use Speech Service
-        /// for converting the audio to a Bot voice
-        /// </summary>
-        public bool UseSpeechService { get; set; }
-
-        /// <summary>
         /// Gets or sets the Speech Service key
         /// </summary>
         public string SpeechConfigKey { get; set; }

@@ -83,15 +83,11 @@ namespace EchoBot.Bot
 
             var ignoreTask = this.StartAudioVideoFramePlayerAsync().ForgetAndLogExceptionAsync(this.GraphLogger, "Failed to start the player");
 
-            this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;            
-
+            this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            if (_settings.UseSpeechService)
-            {
-                _languageService = new SpeechService(_settings, audioToIdentityMap, threadId);
-                _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
-            }
+            _languageService = new SpeechService(_settings, audioToIdentityMap, threadId);
+            _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
         /// <summary>
