@@ -49,6 +49,11 @@ The Bot requires an SSL certificate signed by a Certificate Authority. If you do
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
 - [GitHub CLI](https://cli.github.com/)
   * This is not a hard requirement, but will automate the step to save the secret in your repo.
+- Bicep
+  * Execute `az bicep install` to install Bicep.
+  * Ensure that the Azure CLI binary path is added to the system environment variables (Windows: `C:\Users\<you>\.azure\bin`).
+- Az module
+  * `Install-Module -Name Az -Repository PSGallery -Scope CurrentUser`
 - Must be an owner of the Azure subscription where you are deploying the infrastructure.
 - Must have permissions to create an Entra ID(Azure AD) Application.
 - Note: The Azure Bot must be created in a tenant where you are an adminstrator because the bot permissions require admin consent. The bot infrastructure does not need to be in the same tenant where the Azure bot was created. This is useful if you are not an administrator in your tenant and you can use a separate tenant for the Azure Bot and Teams calling.

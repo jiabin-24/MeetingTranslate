@@ -1,0 +1,32 @@
+# Template: .azure_login
+# This hidden job provides a reusable Azure login step via `before_script`.
+.azure_login:
+  before_script:
+    - pwsh -NoProfile -NonInteractive -Command 'try { if (-not (Get-Module -ListAvailable -Name Az)) { Install-Module -Name Az -Force -Scope CurrentUser -AllowClobber } Import-Module Az } catch { Write-Host "Failed to install/import Az module:"; throw }'
+    - |
+      cat > /tmp/az_login.ps1 <<'PS1'
+      $creds = Get-Content $env:AZURE_CREDENTIALS_FILE -Raw | ConvertFrom-Json
+      $clientId = $creds.clientId
+      $clientSecret = $creds.clientSecret
+      $tenantId = $creds.tenantId
+      $subscriptionId = $creds.subscriptionId
+      $securePwd = ConvertTo-SecureString $clientSecret -AsPlainText -Force
+      $psCred = New-Object System.Management.Automation.PSCredential($clientId, $securePwd)
+      Connect-AzAccount -ServicePrincipal -Credential $psCred -Tenant $tenantId
+
+      if ($null -ne $subscriptionId -and $subscriptionId -ne '') {
+        Write-Host "Attempting to set context to subscriptionId: $subscriptionId"
+        try {
+          Set-AzContext -Subscription $subscriptionId -ErrorAction Stop
+        } catch {
+          Write-Host "Set-AzContext failed for subscriptionId: $subscriptionId. Trying to find subscription by id..."
+          $sub = Get-AzSubscription -SubscriptionId $subscriptionId -ErrorAction SilentlyContinue
+          if ($sub) { Set-AzContext -Subscription $sub.Id } else { Write-Host "Subscription not found: $subscriptionId" }
+        }
+      } else {
+        Write-Host "No subscriptionId provided in credentials. Selecting first subscription for tenant $tenantId"
+        $sub = Get-AzSubscription -TenantId $tenantId | Select-Object -First 1
+        if ($null -ne $sub) { Write-Host "Selected subscription: $($sub.Name) ($($sub.Id))"; Set-AzContext -Subscription $sub.Id } else { Write-Error "No subscriptions found for tenant $tenantId" }
+      }
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/az_login.ps1

@@ -1,0 +1,52 @@
+# build.yml - contains the build_job definition
+build_job:
+  extends: .azure_login
+  stage: build
+  interruptible: true
+  variables:
+    Base: "publish"
+    Component: "EchoBot"
+    BuildName: "0.1.${CI_PIPELINE_IID}"
+    Environment: "D1"
+    OrgName: "NIUAI"
+    Location: "eastasia"
+  script:
+    - |
+      cat > /tmp/build_steps.ps1 <<'PS1'
+      Write-Host 'Create build directory'
+      New-Item -ItemType Directory -Path "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}" -Force | Out-Null
+
+      Write-Host 'Install/Check Node and build frontend'
+      if (Test-Path -Path 'MeetingTranscription/ClientApp/package-lock.json') {
+        Push-Location MeetingTranscription/ClientApp
+        npm ci
+        npm run build
+        Pop-Location
+      } else {
+        Write-Host 'No Node frontend detected (package-lock.json missing)'
+      }
+
+      Write-Host 'Publish .NET project'
+      dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}"
+
+      Get-ChildItem -Path "${env:CI_PROJECT_DIR}/${env:Base}/${env:Component}/${env:BuildName}"
+      Write-Host $env:CI_PROJECT_DIR
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/build_steps.ps1
+    
+    - |
+      cat > /tmp/run_sync_update.ps1 <<'PS1'
+      $Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location }
+      & ./ADF/release-az/Sync-AzBuildComponent.ps1 @Params
+
+      $Params = @{ App = 'BOT'; BuildName = $env:BuildName; ComponentName = $env:Component; BasePath = $env:Base; OrgName = $env:OrgName; Location = $env:Location; Environment = $env:Environment }
+      & ./ADF/release-az/Update-AzBuildMetaData.ps1 @Params
+      PS1
+    - pwsh -NoProfile -NonInteractive -File /tmp/run_sync_update.ps1
+
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+      when: always
+    - when: manual
