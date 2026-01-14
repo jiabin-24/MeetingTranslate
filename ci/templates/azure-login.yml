@@ -41,4 +41,5 @@
         if ($null -ne $sub) { Write-Host "Selected subscription: $($sub.Name) ($($sub.Id))"; Set-AzContext -Subscription $sub.Id } else { Write-Error "No subscriptions found for tenant $tenantId" }
       }
       PS1
+    - pwsh -NoProfile -NonInteractive -Command 'try { if (-not (Get-Module -ListAvailable -Name Az)) { Install-Module -Name Az -Scope CurrentUser -Force -AllowClobber } Import-Module Az } catch { Write-Host "Failed to install/import Az module:"; exit 1 }'
     - pwsh -NoProfile -NonInteractive -File /tmp/az_login.ps1
