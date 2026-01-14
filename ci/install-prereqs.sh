@@ -70,5 +70,71 @@ fi
 
 echo "[install-prereqs] bicep path: $(command -v bicep 2>/dev/null || echo not-found)"
 echo "[install-prereqs] PATH=$PATH"
+# Install .NET SDK (dotnet) if missing
+if command -v dotnet >/dev/null 2>&1; then
+  echo "[install-prereqs] dotnet present: $(command -v dotnet)"
+else
+  echo "[install-prereqs] dotnet not found — attempting install"
+  if command -v apt-get >/dev/null 2>&1; then
+    if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+      if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+      else
+        SUDO=""
+      fi
+
+      echo "[install-prereqs] downloading Microsoft package config"
+      if command -v curl >/dev/null 2>&1; then
+        curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -o /tmp/packages-microsoft-prod.deb || echo "[install-prereqs] failed to download packages-microsoft-prod.deb"
+      else
+        wget -qO /tmp/packages-microsoft-prod.deb https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb || echo "[install-prereqs] failed to download packages-microsoft-prod.deb"
+      fi
+
+      if [ -f /tmp/packages-microsoft-prod.deb ]; then
+        $SUDO dpkg -i /tmp/packages-microsoft-prod.deb || echo "[install-prereqs] dpkg install of microsoft packages failed"
+        $SUDO apt-get update -y || echo "[install-prereqs] apt-get update failed"
+        $SUDO apt-get install -y dotnet-sdk-8.0 || echo "[install-prereqs] apt-get install dotnet-sdk-8.0 failed"
+      else
+        echo "[install-prereqs] microsoft package file not present; skipping dotnet install"
+      fi
+    else
+      echo "[install-prereqs] curl/wget not available; cannot download Microsoft package config for dotnet"
+    fi
+  else
+    echo "[install-prereqs] apt-get not available; skipping dotnet install"
+  fi
+fi
+
+# Install Node.js (node & npm) if missing
+if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+  echo "[install-prereqs] node present: $(command -v node), npm: $(command -v npm)"
+else
+  echo "[install-prereqs] node/npm not found — attempting install"
+  if command -v apt-get >/dev/null 2>&1; then
+    if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+      if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+      else
+        SUDO=""
+      fi
+
+      echo "[install-prereqs] setting up NodeSource (Node 18)"
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL https://deb.nodesource.com/setup_18.x | $SUDO bash - || echo "[install-prereqs] NodeSource setup failed"
+      else
+        wget -qO- https://deb.nodesource.com/setup_18.x | $SUDO bash - || echo "[install-prereqs] NodeSource setup failed"
+      fi
+
+      $SUDO apt-get install -y nodejs || echo "[install-prereqs] apt-get install nodejs failed"
+    else
+      echo "[install-prereqs] curl/wget not available; cannot run NodeSource setup"
+    fi
+  else
+    echo "[install-prereqs] apt-get not available; skipping node/npm install"
+  fi
+fi
+
+echo "[install-prereqs] dotnet path: $(command -v dotnet 2>/dev/null || echo not-found)"
+echo "[install-prereqs] node path: $(command -v node 2>/dev/null || echo not-found), npm: $(command -v npm 2>/dev/null || echo not-found)"
 
 echo "[install-prereqs] Done"
