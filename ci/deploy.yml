@@ -12,4 +12,6 @@ deploy_environment:
       ./ADF/main.ps1 @Params
       if ($Error.Count -gt 0) { throw $Error[0] }
       PS1
+    - bicep --version || true
+    - which bicep || true
     - pwsh -NoProfile -NonInteractive -File /tmp/deploy.ps1

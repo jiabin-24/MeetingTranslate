@@ -17,18 +17,32 @@
       fi
     - |
       if ! command -v bicep >/dev/null 2>&1; then
-        if command -v dotnet >/dev/null 2>&1; then
-          echo "Bicep not found — installing via 'dotnet tool'"
-          dotnet tool install -g Bicep || dotnet tool update -g Bicep || true
-          export PATH="$PATH:$HOME/.dotnet/tools"
-          if [ -f "$HOME/.dotnet/tools/bicep" ]; then
-            ln -sf "$HOME/.dotnet/tools/bicep" /usr/local/bin/bicep || true
-            echo "Bicep installed to $HOME/.dotnet/tools and linked to /usr/local/bin/bicep"
+        echo "Bicep not found — attempting official installer"
+        if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsSL https://aka.ms/install-bicep.sh | bash || true
           else
-            echo "Warning: bicep binary not found after install; New-AzDeployment may fail"
+            wget -qO- https://aka.ms/install-bicep.sh | bash || true
           fi
+        fi
+
+        if ! command -v bicep >/dev/null 2>&1; then
+          echo "Official installer did not produce a 'bicep' binary or it's not in PATH. Trying dotnet tool as fallback."
+          if command -v dotnet >/dev/null 2>&1; then
+            dotnet tool install -g Bicep || dotnet tool update -g Bicep || true
+            export PATH="$PATH:$HOME/.dotnet/tools"
+            if [ -f "$HOME/.dotnet/tools/bicep" ]; then
+              ln -sf "$HOME/.dotnet/tools/bicep" /usr/local/bin/bicep || true
+            fi
+          else
+            echo "dotnet not found; cannot install Bicep. New-AzDeployment may fail"
+          fi
+        fi
+
+        if command -v bicep >/dev/null 2>&1; then
+          echo "bicep available at: $(command -v bicep)"
         else
-          echo "dotnet not found; cannot install Bicep. New-AzDeployment may fail"
+          echo "Warning: bicep still not found after attempts; New-AzDeployment may fail"
         fi
       else
         echo "bicep already installed: $(command -v bicep)"
