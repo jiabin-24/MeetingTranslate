@@ -1,0 +1,131 @@
+name: .NET BOT D1 BUILD AIBOT
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - './**'
+      - .github/workflows/echobot-build-aibot.yml
+
+  pull_request:
+    branches:
+      - 'main'
+    paths:
+      - './**'
+      - .github/workflows/echobot-build-aibot.yml
+
+  workflow_dispatch:
+
+env:
+  # /home/runner/work/publish
+  Base:        publish
+  Component:   EchoBot
+  BuildName:   0.1.${{ github.run_number }}
+  Environment: D1
+  OrgName:     aibot
+  Location:    eastasia
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+        include-prerelease: false
+    
+    - name: Navigate to Workspace
+      run: cd $GITHUB_WORKSPACE
+
+    - name: Create Build Directory
+      run: mkdir ${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Cache Node modules
+      uses: actions/cache@v4
+      with:
+        path: MeetingTranscription/ClientApp/node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('MeetingTranscription/ClientApp/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    - name: Install and build frontend
+      working-directory: MeetingTranscription/ClientApp
+      run: |
+        npm ci
+        npm run build
+
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.nuget/packages
+          # optional: add packages directory in repo if present
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Publish Project
+      run: |
+        dotnet publish MeetingTranscription/MeetingTranscription.csproj -c Release -r win-x64 -nologo --no-self-contained -p:Platform=x64 -o "${{ github.workspace }}/${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/"
+        
+    - name: Run pwsh
+      shell: pwsh
+      run: | 
+        Get-ChildItem -Path ${{ github.workspace }}\${{ env.Base }}\${{ env.Component }}\${{ env.BuildName }}\
+        echo ${{ github.workspace }}
+    
+    - name: Login via Az module
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS_AIBOT_BOT }}
+        enable-AzPSSession: true
+
+    - name: G1_RG_UploadArtifacts_to_Blob
+      uses: Azure/powershell@v2
+      with:
+        inlineScript: |
+          Get-ChildItem -Path  ./${{ env.Base }}/${{ env.Component }}/${{ env.BuildName }}/ # -Recurse
+
+          $Params = @{
+            App           = 'BOT'
+            BuildName     = $env:BuildName
+            ComponentName = $env:Component
+            BasePath      = $env:Base
+            OrgName       = $env:OrgName
+            Location      = $env:location
+          }
+          & ./ADF/release-az/Sync-AzBuildComponent.ps1 @Params
+        azPSVersion: latest
+
+    - name: G1_RG_UpdateBuildMeta_to_Blob
+      uses: Azure/powershell@v2
+      with:
+        inlineScript: |
+          echo $home
+          ls $home
+
+          $Params = @{
+            App           = 'BOT'
+            BuildName     = $env:BuildName
+            ComponentName = $env:Component
+            BasePath      = $env:Base
+            OrgName       = $env:OrgName
+            Location      = $env:location
+            Environment   = $env:Environment
+          }
+          & ./ADF/release-az/Update-AzBuildMetaData.ps1 @Params
+        azPSVersion: latest
+
+
+
