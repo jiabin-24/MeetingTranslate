@@ -82,7 +82,7 @@ namespace MeetingTranscription.Bots
             _logger = logger;
 
             _aiSettings = aiSettingsOpt.Value;
-            if (!string.IsNullOrEmpty(_aiSettings.AgentId))
+            if (!string.IsNullOrEmpty(_aiSettings?.AgentId))
                 _agentClient = new PersistentAgentsClient(_aiSettings.ProjectEndpoint, new ClientSecretCredential(_aiSettings.TenantId, _aiSettings.ClientId, _aiSettings.ClientSecret));
         }
 
