@@ -10,14 +10,6 @@ namespace EchoBot.WebSocket
 {
     public class CaptionHub
     {
-        private class ClientMeta
-        {
-            public string? UserId { get; set; }
-            public string? MeetingId { get; set; }
-            public string? TargetLang { get; set; }
-            public bool Authed { get; set; }
-        }
-
         private readonly ConcurrentDictionary<System.Net.WebSockets.WebSocket, ClientMeta> _clients = new();
 
         public async Task HandleAsync(HttpContext ctx)
@@ -70,7 +62,7 @@ namespace EchoBot.WebSocket
                                 meta.UserId = uid;
                                 meta.Authed = true;
                                 // 可选：返回鉴权成功
-                                var ok = Encoding.UTF8.GetBytes("{\"type\":\"auth_ok\"}");
+                                var ok = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { type = "auth_ok" }));
                                 await ws.SendAsync(ok, WebSocketMessageType.Text, true, CancellationToken.None);
                                 continue;
                             }
@@ -95,7 +87,7 @@ namespace EchoBot.WebSocket
                         {
                             meta.MeetingId = sub.MeetingId;
                             meta.TargetLang = sub.TargetLang;
-                            var ack = Encoding.UTF8.GetBytes("{\"type\":\"subscribed\"}");
+                            var ack = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { type = "subscribed" }));
                             await ws.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None);
                         }
                     }
@@ -160,6 +152,14 @@ namespace EchoBot.WebSocket
                     // ignore failures
                 }
             }
+        }
+
+        private class ClientMeta
+        {
+            public string? UserId { get; set; }
+            public string? MeetingId { get; set; }
+            public string? TargetLang { get; set; }
+            public bool Authed { get; set; }
         }
     }
 }

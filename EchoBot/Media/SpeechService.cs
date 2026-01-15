@@ -1,5 +1,6 @@
 ﻿using EchoBot.Translator;
 using EchoBot.Util;
+using EchoBot.WebSocket;
 using MeetingTranscription.Models.Configuration;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
@@ -45,7 +46,7 @@ namespace EchoBot.Media
         private readonly SpeechConfig _speechConfig;
         private SpeechRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
-        private readonly CaptionPublisher _wsPublisher;
+        private readonly ICaptionPublisher _wsPublisher;
         private readonly ITranslatorClient _translatorClient;
         private readonly IConnectionMultiplexer _mux;
         private readonly string _threadId;
@@ -76,7 +77,7 @@ namespace EchoBot.Media
 
             _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
-            _wsPublisher = ServiceLocator.GetRequiredService<CaptionPublisher>();
+            _wsPublisher = ServiceLocator.GetRequiredService<ICaptionPublisher>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 

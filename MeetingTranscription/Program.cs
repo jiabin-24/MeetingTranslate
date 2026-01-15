@@ -57,9 +57,15 @@ static class Program
 
         builder.RegisterBotServices();
 
-        // WebSocket 相关服务
-        builder.Services.AddSingleton<CaptionHub>();
-        builder.Services.AddSingleton<CaptionPublisher>();
+        // Real-time messaging: allow switching between Azure SignalR and original WebSocket
+        var signalrConn = builder.Configuration.GetValue<string>("AzureSignalRConnection");
+        if (!string.IsNullOrEmpty(signalrConn))
+            builder.Services.AddSignalR().AddAzureSignalR(option => option.ConnectionString = signalrConn); // Use Azure SignalR service to scale real-time messaging
+        else
+            builder.Services.AddSingleton<CaptionHub>(); // Keep original in-process WebSocket hub
+
+        // Register publisher implementation based on the mode
+        builder.Services.AddSingleton<ICaptionPublisher>(sp => EchoBot.WebSocket.CaptionPublisher.CreateInstance(!string.IsNullOrEmpty(signalrConn)));
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
@@ -104,6 +110,11 @@ static class Program
             endpoints.MapControllerRoute(
             name: "default",
             pattern: "{controller=Home}/{action=Index}/{id?}");
+
+            if (!string.IsNullOrEmpty(signalrConn))
+                endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
+            else
+                endpoints.Map("/captionHub", async ctx => await ctx.RequestServices.GetRequiredService<CaptionHub>().HandleAsync(ctx)); // WebSocket hub for captions
         });
         app.UseBotServices();
         app.UseSpaStaticFiles();
@@ -117,12 +128,6 @@ static class Program
             }
         });
         ServiceLocator.Initialize(app.Services);
-        app.Map("/realtime", async ctx =>
-        {
-            // WebSocket 端点（前端连接：wss://host:port/realtime）
-            var hub = ctx.RequestServices.GetRequiredService<CaptionHub>();
-            await hub.HandleAsync(ctx);
-        });
 
         app.Run();
     }
