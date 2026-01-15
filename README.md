@@ -163,13 +163,19 @@ You can also run the infrastructure deployment locally using the -RunDeployment 
 ./deploy.ps1 -OrgName TEB -RunDeployment
 ```
 
-### Add Redis cache service
+### Create Redis cache service
+
+> Use to store captions text
 
 In Azure portal, add a instance of `Azure Managed Redis`
 ![add-redis](./MeetingTranscription/Images/add-redis.png)
 
 Get redis endpoint and key
 ![redis-property](./MeetingTranscription/Images/redis-endpoint.png)
+
+### Create Azure SignalR
+
+> To maintain large amount websocket connections with clients
 
 ### Update DNS
 Your DNS Name for your bot needs to point to the public load balacer in order to call your bot and have it join a meeting.
