@@ -234,8 +234,6 @@ namespace MeetingTranscription.Bots
                 // End the bot's call in the meeting
                 if (_botMeetingsDictionary.TryRemove(meeting.Id, out var threadId))
                     await _botService.EndCallByThreadIdAsync(threadId);
-
-                await SendMeetingTranscriptions(meetingInfo, turnContext, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -243,7 +241,7 @@ namespace MeetingTranscription.Bots
             }
         }
 
-        private async Task SendMeetingTranscriptions(Microsoft.Bot.Schema.Teams.MeetingInfo meetingInfo, ITurnContext<IEventActivity> turnContext, CancellationToken cancellationToken)
+        private async Task SendMeetingTranscriptions(MeetingInfo meetingInfo, ITurnContext<IEventActivity> turnContext, CancellationToken cancellationToken)
         {
             try
             {
