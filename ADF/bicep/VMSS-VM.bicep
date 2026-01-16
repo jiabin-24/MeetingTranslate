@@ -429,6 +429,21 @@ resource VMSS 'Microsoft.Compute/virtualMachineScaleSets@2021-07-01' = {
     }
   }
 }
+// Grant Key Vault Secrets User role to the VMSS system-assigned managed identity for the existing key vault
+var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+resource vmssKvRoleAssignment 'Microsoft.Authorization/roleAssignments@2020-04-01-preview' = {
+  name: guid(kv.id, VMSS.id, keyVaultSecretsUserRoleId)
+  scope: kv
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)
+    principalId: reference(VMSS.id, '2021-07-01').identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+  dependsOn: [
+    VMSS
+  ]
+}
 
 resource VMSSAutoscale 'Microsoft.Insights/autoscalesettings@2021-05-01-preview' = {
   name: '${Deployment}-ss${AppServer.Name}-Autoscale'
