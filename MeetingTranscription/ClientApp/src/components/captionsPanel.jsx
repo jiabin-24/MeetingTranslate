@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useRealtimeCaptions } from '../utils/useRealtimeCaptions';
+import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
 
 export default function CaptionsPanel(props) {
 

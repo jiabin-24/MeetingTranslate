@@ -148,16 +148,26 @@ async function processPlaybackQueue() {
                     break; // stop processing until unlock
                 }
 
+                // If a stop was requested after we started playback, avoid attempting any fallback
+                if (_suppressPlayback) {
+                    try { entry.reject && entry.reject(new Error('Playback suppressed')); } catch (_) { }
+                    break;
+                }
+
                 // If NotSupported or decode error, try WebAudio fallback for this item
                 try {
                     try { window.dispatchEvent(new CustomEvent('realtime-audio-status', { detail: { status: 'playing' } })); } catch (_) { }
                     // If chunks are provided (assembled frames), use them; otherwise try to decode blob or fetch the url
                     if (item && item.chunks && item.chunks.length) {
+                        // respect stop request before heavy decode
+                        if (_suppressPlayback) { try { entry.reject && entry.reject(new Error('Playback suppressed')); } catch (_) {} ; break; }
                         await playChunksWithWebAudio(item.chunks);
                     } else if (item && item.blob) {
                         try {
                             try { console.debug('Falling back to WebAudio from blob'); } catch (_) { }
+                            if (_suppressPlayback) throw new Error('Playback suppressed');
                             const ab = await item.blob.arrayBuffer();
+                            if (_suppressPlayback) throw new Error('Playback suppressed');
                             await playChunksWithWebAudio([ab]);
                         } catch (blobErr) {
                             console.warn('Blob->WebAudio decode failed', blobErr);
@@ -166,8 +176,10 @@ async function processPlaybackQueue() {
                     } else if (item && item.url) {
                         try {
                             try { console.debug('Falling back to WebAudio from url', item.url); } catch (_) { }
+                            if (_suppressPlayback) throw new Error('Playback suppressed');
                             const resp = await fetch(item.url);
                             const ab = await resp.arrayBuffer();
+                            if (_suppressPlayback) throw new Error('Playback suppressed');
                             await playChunksWithWebAudio([ab]);
                         } catch (urlErr) {
                             console.warn('URL->WebAudio fetch/decode failed', urlErr);
@@ -337,6 +349,18 @@ function stopAudio() {
         try { console.debug('stopAudio invoked'); } catch (_) { }
         _suppressPlayback = true;
         stopCurrentPlayback();
+        // Clear the playback queue: revoke any object URLs and reject queued promises
+        try {
+            while (_playbackQueue.length) {
+                const q = _playbackQueue.shift();
+                try {
+                    if (q && q.item && q.item.url) {
+                        try { URL.revokeObjectURL(q.item.url); } catch (_) {}
+                    }
+                } catch (_) {}
+                try { if (q && typeof q.reject === 'function') q.reject(new Error('Playback stopped')); } catch (_) {}
+            }
+        } catch (_) {}
         try {
             for (const entry of _pendingAudioBlobs) {
                 if (entry && entry.url) {
@@ -392,7 +416,7 @@ export function useRealtimeCaptions(opts) {
         if (opts.meetingId) {
             (async () => {
                 try {
-                    const url = `https://localhost:9441/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
                     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
                     if (!resp.ok) return;
                     const data = await resp.json();
