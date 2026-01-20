@@ -21,7 +21,6 @@ let _processingQueue = false;
 // Stop current HTMLAudioElement or WebAudio source but do NOT clear the pending queue.
 function stopCurrentPlayback() {
     try {
-        try { console.debug('stopCurrentPlayback invoked'); } catch (_) { }
         // Stop any tracked HTMLAudioElements aggressively
         try {
             for (const a of Array.from(_activeAudioEls)) {
@@ -164,7 +163,6 @@ async function processPlaybackQueue() {
                         await playChunksWithWebAudio(item.chunks);
                     } else if (item && item.blob) {
                         try {
-                            try { console.debug('Falling back to WebAudio from blob'); } catch (_) { }
                             if (_suppressPlayback) throw new Error('Playback suppressed');
                             const ab = await item.blob.arrayBuffer();
                             if (_suppressPlayback) throw new Error('Playback suppressed');
@@ -175,7 +173,6 @@ async function processPlaybackQueue() {
                         }
                     } else if (item && item.url) {
                         try {
-                            try { console.debug('Falling back to WebAudio from url', item.url); } catch (_) { }
                             if (_suppressPlayback) throw new Error('Playback suppressed');
                             const resp = await fetch(item.url);
                             const ab = await resp.arrayBuffer();
@@ -346,7 +343,6 @@ async function unlockPendingAudio() {
 
 function stopAudio() {
     try {
-        try { console.debug('stopAudio invoked'); } catch (_) { }
         _suppressPlayback = true;
         stopCurrentPlayback();
         // Clear the playback queue: revoke any object URLs and reject queued promises
@@ -454,10 +450,7 @@ export function useRealtimeCaptions(opts) {
 
             conn.on('audio', async (meta, audio) => {
                 try {
-                    console.debug('[signalr] audio event received', { meta, audioType: typeof audio });
-
                     if (!meta) return;
-
                     // If the audio metadata indicates the speaker is the current user,
                     // skip playback (do not store metadata or play the binary frames).
                     try {
@@ -469,7 +462,6 @@ export function useRealtimeCaptions(opts) {
 
                     // If user hasn't enabled audio playback yet, drop both meta and binary
                     if (!_audioUnlocked) {
-                        try { console.debug('[signalr] audio dropped because audio not unlocked'); } catch (_) {}
                         return;
                     }
 
@@ -622,6 +614,25 @@ export function useRealtimeCaptions(opts) {
             try { _activeHookInstances.delete(_hookInstance); } catch (_) { }
         };
     }, [opts.url, opts.hubUrl, opts.meetingId]);
+
+    // When targetLang changes, ask the server to update this connection's subscription
+    useEffect(() => {
+        const conn = connRef.current;
+        if (!conn) return;
+        // Try to re-subscribe on the existing connection. If the connection isn't ready
+        // the invoke will fail and be logged, which is acceptable.
+        (async () => {
+            try {
+                if (opts.meetingId) {
+                    try { await conn.invoke('Subscribe', opts.meetingId, opts.targetLang); } catch (e) { console.warn('Resubscribe invoke failed', e); }
+                }
+            } catch (e) { /* ignore */ }
+        })();
+
+        // Clear local audio playback/queues to avoid playing cached audio in the previous language
+        try { if (audioBuffersRef && audioBuffersRef.current) audioBuffersRef.current.clear(); } catch (_) { }
+        try { if (audioQueueRef && audioQueueRef.current) audioQueueRef.current.length = 0; } catch (_) { }
+    }, [opts.targetLang, opts.meetingId]);
 
     const unlockAudio = () => { try { unlockPendingAudio(); } catch (e) { console.warn('unlockAudio failed', e); } };
 

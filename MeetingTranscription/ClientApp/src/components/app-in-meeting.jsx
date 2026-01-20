@@ -20,7 +20,7 @@ const AppInMeeting = props => {
     }, []);
 
     const [targetLang, setTargetLang] = useState('zh-Hans');
-    var host = API_BASE === '' ? window.location.host : API_BASE.replace(/^https?:\/\//, '');
+    let host = API_BASE === '' ? window.location.host : API_BASE.replace(/^https?:\/\//, '');
     const wsUrl = `https://${host}/captionHub`;
 
     return (

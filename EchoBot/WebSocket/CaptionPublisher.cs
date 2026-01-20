@@ -62,7 +62,8 @@ namespace EchoBot.WebSocket
             if (_sigHub != null)
             {
                 var meta = new { type = "audio", meetingId, audioId, speakerId, lang, contentType, length, headerHex, isFinal = true };
-                return _sigHub.Clients.Group(meetingId).SendCoreAsync("audio", new object?[] { meta, audio }, default);
+                // Send audio only to clients subscribed to the specific target language group for this meeting
+                return _sigHub.Clients.Group($"{meetingId}:{lang}").SendCoreAsync("audio", new object?[] { meta, audio }, default);
             }
 
             if (_wsHub != null)

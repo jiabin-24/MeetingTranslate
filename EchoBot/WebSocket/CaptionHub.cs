@@ -85,10 +85,30 @@ namespace EchoBot.WebSocket
                         var sub = JsonSerializer.Deserialize<SubscribeMessage>(text);
                         if (sub?.Type?.Equals("subscribe", StringComparison.OrdinalIgnoreCase) == true)
                         {
+                            // If the client is changing meeting or target language, inform it to clear any cached audio
+                            var prevMeeting = meta.MeetingId;
+                            var prevTarget = meta.TargetLang;
+
                             meta.MeetingId = sub.MeetingId;
                             meta.TargetLang = sub.TargetLang;
+
                             var ack = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { type = "subscribed" }));
                             await ws.SendAsync(ack, WebSocketMessageType.Text, true, CancellationToken.None);
+
+                            try
+                            {
+                                if ((!string.IsNullOrEmpty(prevTarget) && !string.Equals(prevTarget, meta.TargetLang, StringComparison.OrdinalIgnoreCase))
+                                    || (!string.IsNullOrEmpty(prevMeeting) && !string.Equals(prevMeeting, meta.MeetingId, StringComparison.Ordinal)))
+                                {
+                                    // ask client to clear audio buffers/queue for immediate UX consistency
+                                    var ctrl = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { type = "control", action = "clear_audio" }));
+                                    await ws.SendAsync(ctrl, WebSocketMessageType.Text, true, CancellationToken.None);
+                                }
+                            }
+                            catch
+                            {
+                                // ignore failures sending control message
+                            }
                         }
                     }
                     catch { /* 忽略格式错误 */ }
@@ -140,6 +160,8 @@ namespace EchoBot.WebSocket
                 if (ws.State != WebSocketState.Open) continue;
                 if (!metaInfo.Authed) continue;
                 if (!string.Equals(metaInfo.MeetingId, meetingId, StringComparison.Ordinal)) continue;
+                // Only send audio to clients whose TargetLang matches the audio language
+                if (string.IsNullOrEmpty(metaInfo.TargetLang) || !string.Equals(metaInfo.TargetLang, lang, StringComparison.OrdinalIgnoreCase)) continue;
 
                 try
                 {

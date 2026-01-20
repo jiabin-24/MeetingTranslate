@@ -26,7 +26,6 @@ let _processingQueue = false;
 // Stop current HTMLAudioElement or WebAudio source but do NOT clear the pending queue.
 function stopCurrentPlayback() {
     try {
-        try { console.debug('stopCurrentPlayback invoked'); } catch (_) {}
         // Stop any tracked HTMLAudioElements aggressively
         try {
             for (const a of Array.from(_activeAudioEls)) {
@@ -167,7 +166,6 @@ async function processPlaybackQueue() {
                         await playChunksWithWebAudio(item.chunks);
                     } else if (item && item.blob) {
                         try {
-                            try { console.debug('Falling back to WebAudio from blob'); } catch (_) {}
                             if (_suppressPlayback) throw new Error('Playback suppressed');
                             const ab = await item.blob.arrayBuffer();
                             if (_suppressPlayback) throw new Error('Playback suppressed');
@@ -178,7 +176,6 @@ async function processPlaybackQueue() {
                         }
                     } else if (item && item.url) {
                         try {
-                            try { console.debug('Falling back to WebAudio from url', item.url); } catch (_) {}
                             if (_suppressPlayback) throw new Error('Playback suppressed');
                             const resp = await fetch(item.url);
                             const ab = await resp.arrayBuffer();
@@ -289,7 +286,6 @@ async function unlockPendingAudio() {
 // Stop playback and clear queued audio
 function stopAudio() {
     try {
-        try { console.debug('stopAudio invoked'); } catch (_) {}
         // prevent any further incoming audio from starting
         _suppressPlayback = true;
         // stop any currently playing audio (HTMLAudioElements and WebAudio sources)
@@ -536,7 +532,6 @@ export function useRealtimeCaptions(opts) {
                         // Try <audio> first. If it fails due to unsupported format, fall back to WebAudio decode.
                         const url = URL.createObjectURL(blob);
                         // enqueue assembled audio for sequential playback
-                        try { console.debug('Enqueuing assembled audio', { foundKey, chunkCount: entry.chunks.length, mergedBytes: merged.length }); } catch (_) {}
                         enqueuePlayback({ blob, url, chunks: entry.chunks.slice() });
                         audioBuffersRef.current.delete(foundKey);
                     }
@@ -574,6 +569,24 @@ export function useRealtimeCaptions(opts) {
             try { _activeHookInstances.delete(_hookInstance); } catch (_) {}
         };
     }, [opts.url, opts.meetingId]);
+
+    // When targetLang changes, ask the server to update this connection's subscription
+    useEffect(() => {
+        try {
+            const ws = wsRef.current;
+            if (!ws) return;
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            // Send subscribe message on the existing WebSocket connection
+            ws.send(JSON.stringify({ Type: 'subscribe', MeetingId: opts.meetingId, TargetLang: opts.targetLang }));
+
+            // For immediate UX, clear any queued/playing audio to avoid playing cached audio in the old language
+            try { if (audioBuffersRef && audioBuffersRef.current) audioBuffersRef.current.clear(); } catch (_) {}
+            try { if (audioQueueRef && audioQueueRef.current) audioQueueRef.current.length = 0; } catch (_) {}
+        } catch (e) {
+            console.warn('WebSocket resubscribe failed', e);
+        }
+    }, [opts.targetLang, opts.meetingId]);
 
     // Expose an explicit unlock function so UI can call it after user gesture
     const unlockAudio = () => {
@@ -637,7 +650,6 @@ async function playChunksWithWebAudio(chunks) {
 
     // Try decoding (may throw if format unsupported)
     try {
-        try { console.debug('Decoding audio buffer for WebAudio, bytes:', merged.length); } catch (_) {}
         const audioBuffer = await ctx.decodeAudioData(merged.buffer.slice(0));
         const src = ctx.createBufferSource();
         _currentAudioSource = src;
