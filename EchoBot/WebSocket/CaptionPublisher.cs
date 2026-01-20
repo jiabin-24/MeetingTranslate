@@ -13,15 +13,15 @@ namespace EchoBot.WebSocket
 
     public class CaptionPublisher : ICaptionPublisher
     {
-        private readonly IHubContext<CaptionSignalRHub>? _hub;
+        private readonly IHubContext<CaptionSignalRHub>? _sigHub;
         private readonly CaptionHub? _wsHub;
 
         public static CaptionPublisher CreateInstance(bool useSignalR)
         {
             if (useSignalR)
             {
-                var hub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
-                return new CaptionPublisher(hub);
+                var sigHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
+                return new CaptionPublisher(sigHub);
             }
             else
             {
@@ -33,7 +33,7 @@ namespace EchoBot.WebSocket
         // SignalR constructor
         private CaptionPublisher(IHubContext<CaptionSignalRHub> hub)
         {
-            _hub = hub;
+            _sigHub = hub;
         }
 
         // WebSocket constructor
@@ -44,9 +44,9 @@ namespace EchoBot.WebSocket
 
         public Task PublishCaptionAsync(CaptionPayload payload)
         {
-            if (_hub != null)
+            if (_sigHub != null)
             {
-                return _hub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", new object?[] { payload }, default);
+                return _sigHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", new object?[] { payload }, default);
             }
 
             if (_wsHub != null)
@@ -59,10 +59,10 @@ namespace EchoBot.WebSocket
 
         public Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex)
         {
-            if (_hub != null)
+            if (_sigHub != null)
             {
                 var meta = new { type = "audio", meetingId, audioId, speakerId, lang, contentType, length, headerHex, isFinal = true };
-                return _hub.Clients.Group(meetingId).SendCoreAsync("audio", new object?[] { meta, audio }, default);
+                return _sigHub.Clients.Group(meetingId).SendCoreAsync("audio", new object?[] { meta, audio }, default);
             }
 
             if (_wsHub != null)

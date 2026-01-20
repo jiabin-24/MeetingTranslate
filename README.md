@@ -69,6 +69,7 @@ The Bot requires an SSL certificate signed by a Certificate Authority. If you do
 | CustomSpeechEndpoints| The model id of Azure Custom Speech |
 | Translator.Routing   | The category of Azure Custom Translator |
 | Redis.Configuration  | The endpoint of Azure Managed Redis |
+| AzureSignalRConnection  | The Azure SignalR for large amount connection of websocket |
 
 ## Deploy
 
@@ -176,6 +177,8 @@ Get redis endpoint and key
 ### Create Azure SignalR
 
 > To maintain large amount websocket connections with clients
+
+![create-signalr](./MeetingTranscription/Images/create-signalr.png)
 
 ### Update DNS
 Your DNS Name for your bot needs to point to the public load balacer in order to call your bot and have it join a meeting.
