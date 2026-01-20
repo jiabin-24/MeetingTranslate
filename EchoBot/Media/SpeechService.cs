@@ -350,7 +350,27 @@ namespace EchoBot.Media
             await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
             await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 
-            await TextToSpeech(captions["en"], "en", speaker.Id);
+            // For each available caption (language -> text), synthesize speech and publish in parallel
+            await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+        }
+
+        private async Task TextToSpeechBatch(Dictionary<string, string> captions, string speakerId)
+        {
+            try
+            {
+                var tasks = captions
+                    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                    .Select(kv => TextToSpeech(kv.Value, kv.Key, speakerId))
+                    .ToArray();
+
+                if (tasks.Length > 0)
+                    await Task.WhenAll(tasks);
+            }
+            catch (Exception ex)
+            {
+                // Log any failures from the parallel synthesis tasks
+                _logger.LogWarning(ex, "One or more TextToSpeech tasks failed.");
+            }
         }
 
         private Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
