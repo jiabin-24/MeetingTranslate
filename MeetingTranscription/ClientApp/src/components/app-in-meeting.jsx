@@ -19,10 +19,8 @@ const AppInMeeting = props => {
     }, []);
 
     const [targetLang, setTargetLang] = useState('zh-Hans');
-
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${wsProtocol}//${window.location.host}/captionHub`;
-    //const wsUrl = 'wss://localhost:9441/realtime'; // For local testing with self-signed certs
+    const wsUrl = `${window.location.protocol}//${window.location.host}/captionHub`;
+    //const wsUrl = 'https://localhost:9441/captionHub'; // For local testing with self-signed certs
 
     return (
         <div className="captions-panel-container">
