@@ -458,6 +458,15 @@ export function useRealtimeCaptions(opts) {
 
                     if (!meta) return;
 
+                    // If the audio metadata indicates the speaker is the current user,
+                    // skip playback (do not store metadata or play the binary frames).
+                    try {
+                        const currentUserId = opts.currentUser && opts.currentUser.id;
+                        if (currentUserId && meta && meta.speakerId && String(meta.speakerId) === String(currentUserId)) {
+                            return;
+                        }
+                    } catch (_) { }
+
                     // If user hasn't enabled audio playback yet, drop both meta and binary
                     if (!_audioUnlocked) {
                         try { console.debug('[signalr] audio dropped because audio not unlocked'); } catch (_) {}

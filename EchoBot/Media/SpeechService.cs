@@ -202,10 +202,13 @@ namespace EchoBot.Media
                         var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
                         try
                         {
+                            // capture a snapshot of active speakers at the time the recognition result arrived
+                            var activeSpeakersSnapshot = _activeSpeakers;
+
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                             var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
-                            await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original);
+                            await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original, activeSpeakersSnapshot);
                         }
                         catch (Exception ex)
                         {
@@ -314,18 +317,18 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration, string sourceLang, string sourceText)
+        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration, string sourceLang, string sourceText, uint[]? activeSpeakersSnapshot = null)
         {
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks
             long endMs = startMs + (long)duration.TotalMilliseconds;
 
             // determine speaker label from active speakers if available
             var speaker = new Models.Participant { DisplayName = "Bot" };
-            if (_activeSpeakers is { Length: > 0 })
+            if (activeSpeakersSnapshot is { Length: > 0 })
             {
-                var audioId = _activeSpeakers[0].ToString();
+                var audioId = activeSpeakersSnapshot[0].ToString();
                 if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
-                    speaker = new Models.Participant { DisplayName = $"Speaker-{_activeSpeakers[0]}" };
+                    speaker = new Models.Participant { DisplayName = $"Speaker-{activeSpeakersSnapshot[0]}" };
             }
 
             var payload = new CaptionPayload(
