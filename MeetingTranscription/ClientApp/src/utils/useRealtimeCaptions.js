@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState } from 'react';
+import { API_BASE } from '../config/apiBase';
 
 // Module-level queue and unlock state to handle browser autoplay restrictions.
 // Each entry is { blob, url }
@@ -383,7 +384,7 @@ export function useRealtimeCaptions(opts) {
         if (opts.meetingId) {
             (async () => {
                 try {
-                    const url = `/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
+                    const url = `${API_BASE}/api/meeting/getMeetingCaptions?threadId=${encodeURIComponent(opts.meetingId)}`;
                     const resp = await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
                     if (!resp.ok) return;
                     const data = await resp.json();

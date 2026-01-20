@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE } from '../config/apiBase';
 import * as microsoftTeams from "@microsoft/teams-js";
 import CaptionsPanel from "./captionsPanel";
 
@@ -19,8 +20,8 @@ const AppInMeeting = props => {
     }, []);
 
     const [targetLang, setTargetLang] = useState('zh-Hans');
-    const wsUrl = `${window.location.protocol}//${window.location.host}/captionHub`;
-    //const wsUrl = 'https://localhost:9441/captionHub'; // For local testing with self-signed certs
+    var host = API_BASE === '' ? window.location.host : API_BASE.replace(/^https?:\/\//, '');
+    const wsUrl = `https://${host}/captionHub`;
 
     return (
         <div className="captions-panel-container">
