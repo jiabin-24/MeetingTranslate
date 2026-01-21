@@ -6,6 +6,8 @@ import { API_BASE } from '../config/apiBase';
 
 // Module-level queue and unlock state to handle browser autoplay restrictions.
 const _pendingAudioBlobs = [];
+// Maximum captions to keep in the client's in-memory list
+const MAX_CAPTIONS = 100;
 let _audioUnlocked = false;
 let _interactionHandlersInstalled = false;
 let _suppressPlayback = false;
@@ -382,16 +384,33 @@ function mergeCaptions(prev, incoming) {
     const isFinal = !!incoming.isFinal;
     const hasWindow = incoming.startMs != null && incoming.endMs != null;
     if (isFinal && hasWindow) {
-        const filtered = prev.filter(l => !(l.startMs === incoming.startMs && l.endMs === incoming.endMs));
-        return sortByTime([...filtered, incoming]);
+        // Simple de-duplication: remove any existing caption that has the same
+        // speakerId (or speaker) AND the same startMs. This ensures the in-progress
+        // partial (which may have no window) or prior final with slightly different
+        // metadata won't leave a duplicate when the confirmed final arrives.
+        const inSpeaker = incoming.speakerId || '';
+        const inStart = incoming.startMs;
+
+        const filtered = prev.filter(l => {
+            const existingSpeaker = l.speakerId || '';
+            if (!existingSpeaker) return true;
+            if (existingSpeaker !== inSpeaker) return true;
+            // If existing has same startMs, drop it (dedupe)
+            if (l.startMs === inStart) return false;
+            return true;
+        });
+
+        const next = sortByTime([...filtered, incoming]);
+        if (next.length > MAX_CAPTIONS) return next.slice(next.length - MAX_CAPTIONS);
+        return next;
     } else {
         // For partial (non-final) captions we should update a single existing line
         // instead of appending a new one each time. Match by speakerId (or speaker)
         // and sourceLang so interim updates replace the previous partial from
         // the same speaker/language pair.
         const matchKey = (c) => {
-            const idA = c.speakerId || c.speaker || '';
-            const idB = incoming.speakerId || incoming.speaker || '';
+            const idA = c.speakerId || '';
+            const idB = incoming.speakerId ||  '';
             const langA = c.sourceLang || '';
             const langB = incoming.sourceLang || '';
             return !c.isFinal && idA === idB && langA === langB;
@@ -406,12 +425,19 @@ function mergeCaptions(prev, incoming) {
         }
 
         // No existing partial for this speaker/lang — append to the end
-        return [...prev, incoming];
+        const next = sortByTime([...prev, incoming]);
+        if (next.length > MAX_CAPTIONS) return next.slice(next.length - MAX_CAPTIONS);
+        return next;
     }
 }
 
 function sortByTime(arr) {
     return arr.slice().sort((a, b) => {
+        // Put final captions before partial (non-final) ones
+        const aFinal = !!a.isFinal;
+        const bFinal = !!b.isFinal;
+        if (aFinal !== bFinal) return aFinal ? -1 : 1;
+
         const sa = a.startMs ?? 0;
         const sb = b.startMs ?? 0;
         if (sa === sb) return (a.endMs ?? sa) - (b.endMs ?? sb);
