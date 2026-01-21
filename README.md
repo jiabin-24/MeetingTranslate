@@ -171,7 +171,7 @@ You can also run the infrastructure deployment locally using the -RunDeployment 
 In Azure portal, add a instance of `Azure Managed Redis`
 ![add-redis](./MeetingTranscription/Images/add-redis.png)
 
-Get redis endpoint and key
+Get redis endpoint and key. Update to `appsettings.json: Redis`
 ![redis-property](./MeetingTranscription/Images/redis-endpoint.png)
 
 ### Create Azure SignalR
@@ -179,6 +179,9 @@ Get redis endpoint and key
 > To maintain large amount websocket connections with clients
 
 ![create-signalr](./MeetingTranscription/Images/create-signalr.png)
+
+Get connection string and update to `AzureSignalRConnection`
+![signalr-conn](./MeetingTranscription/Images/signalr-conn.png)
 
 ### Update DNS
 Your DNS Name for your bot needs to point to the public load balacer in order to call your bot and have it join a meeting.
@@ -193,13 +196,13 @@ The GitHub Action app-build-.yml builds the solution and uploads the output to t
 Add the bot to Meeting (from calendar).
 ![from-calendar](./MeetingTranscription/Images/add-bot-from-calendar.png)
 
-Add the bot from meeting channel
+(Or) Add the bot from meeting channel
 ![from-meeting-channel](./MeetingTranscription/Images/add-bot-from-chat.png)
 
-For developer (upload the zip file)
+Developers — if the tenant admin hasn't granted consent, upload the manifest ZIP to install the Teams app locally.
 ![from-channel-develop](./MeetingTranscription/Images/add-bot-from-chat-develop.png)
 
-Add the bot in the meeting
+Add the bot when you are already in a meeting
 ![add-from-meeting](./MeetingTranscription/Images/add-bot-in-meeting.png)
 ![bot-panel](./MeetingTranscription/Images/bot-panel.png)
 
