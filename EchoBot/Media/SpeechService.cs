@@ -67,13 +67,13 @@ namespace EchoBot.Media
             _threadId = threadId ?? string.Empty;
 
             // 提升识别准确率
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous");
-            _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy");
-            _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced");
-            _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText");
-            _speechConfig.SetProperty("SpeechServiceConnection_InitialSilenceTimeoutMs", "7000");
-            _speechConfig.SetProperty("SpeechServiceConnection_EndSilenceTimeoutMs", "2000");
-            _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "true");
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "600"); // 间隔静音多长时间认为一句话结束
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 初始静音超时
+            _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy"); // 语言检测优先准确率
+            _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
+            _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
+            _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "true"); // 始终使用增强模型
 
             _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
