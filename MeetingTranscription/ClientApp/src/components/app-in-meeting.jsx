@@ -19,7 +19,14 @@ const AppInMeeting = props => {
         });
     }, []);
 
-    const [targetLang, setTargetLang] = useState('zh-Hans');
+    const [targetLang, setTargetLang] = useState(() => {
+        return localStorage.getItem('targetLang') || 'zh-Hans';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('targetLang', targetLang);
+    }, [targetLang]);
+
     let host = API_BASE === '' ? window.location.host : API_BASE.replace(/^https?:\/\//, '');
     const wsUrl = `https://${host}/captionHub`;
 

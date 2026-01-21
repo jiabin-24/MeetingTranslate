@@ -35,7 +35,7 @@ const Configure = props => {
 
             if (meetingId && tenantId && userOid) {
                 try {
-                    const meetingSegment = encodeURIComponent(`19:meeting_${meetingId}@thread.v2`);
+                    const meetingSegment = encodeURIComponent(meetingId);
                     const contextParam = encodeURIComponent(JSON.stringify({ Tid: tenantId, Oid: userOid }));
                     joinUrl = `https://teams.microsoft.com/l/meetup-join/${meetingSegment}/0?context=${contextParam}`;
                 } catch (e) {
