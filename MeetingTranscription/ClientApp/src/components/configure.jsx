@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import * as microsoftTeams from "@microsoft/teams-js";
+import { API_BASE } from '../config/apiBase';
 
 // Handles redirection after successful/failure sign in attempt.
 const Configure = props => {
@@ -41,7 +42,7 @@ const Configure = props => {
                     console.warn('Failed to construct joinUrl', e);
                 }
             }
-            const res = await fetch('/Calls', {
+            const res = await fetch(`${API_BASE}/Calls`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ joinUrl: joinUrl }),
