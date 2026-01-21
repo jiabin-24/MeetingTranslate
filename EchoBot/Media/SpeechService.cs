@@ -68,7 +68,7 @@ namespace EchoBot.Media
 
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "600"); // 间隔静音多长时间认为一句话结束
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "500"); // 间隔静音多长时间认为一句话结束
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 初始静音超时
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy"); // 语言检测优先准确率
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
@@ -186,6 +186,20 @@ namespace EchoBot.Media
                 {
                     var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                     _logger.LogInformation($"RECOGNIZING in '{sourceLang}': Text={e.Result.Text}");
+
+                    try
+                    {
+                        var partialText = e.Result.Text;
+                        if (string.IsNullOrWhiteSpace(partialText))
+                            return;
+
+                        var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
+                        _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, _activeSpeakers);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to publish partial caption");
+                    }
                 };
 
                 _recognizer.Recognized += async (s, e) =>
@@ -208,7 +222,7 @@ namespace EchoBot.Media
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                             var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
-                            await Transcript(translated, e.Offset, e.Result.Duration, sourceLang, original, activeSpeakersSnapshot);
+                            _ = Transcript(translated, true, e.Offset, e.Result.Duration, sourceLang, original, activeSpeakersSnapshot);
                         }
                         catch (Exception ex)
                         {
@@ -317,11 +331,41 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task Transcript(IReadOnlyDictionary<string, string> captions, ulong offset, TimeSpan duration, string sourceLang, string sourceText, uint[]? activeSpeakersSnapshot = null)
+        private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration, string sourceLang, string sourceText,
+            uint[]? activeSpeakersSnapshot = null)
         {
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks
             long endMs = startMs + (long)duration.TotalMilliseconds;
 
+            var speaker = GetParticipant(activeSpeakersSnapshot);
+            var payload = new CaptionPayload(
+                Type: "caption",
+                MeetingId: _threadId,
+                Speaker: speaker.DisplayName,
+                SpeakerId: speaker.Id,
+                SourceLang: sourceLang,
+                Text: BuildTextDictionary(captions, sourceLang, sourceText),
+                IsFinal: isFinal,
+                StartMs: startMs,
+                EndMs: endMs
+            );
+
+            // send the transcript to the websocket clients
+            await _wsPublisher.PublishCaptionAsync(payload);
+
+            if (!isFinal)
+                return;
+
+            var listKey = $"list:{_threadId}";
+            await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
+            await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
+
+            // For each available caption (language -> text), synthesize speech and publish in parallel
+            await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+        }
+
+        private Models.Participant GetParticipant(uint[]? activeSpeakersSnapshot = null)
+        {
             // determine speaker label from active speakers if available
             var speaker = new Models.Participant { DisplayName = "Bot" };
             if (activeSpeakersSnapshot is { Length: > 0 })
@@ -330,28 +374,7 @@ namespace EchoBot.Media
                 if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
                     speaker = new Models.Participant { DisplayName = $"Speaker-{activeSpeakersSnapshot[0]}" };
             }
-
-            var payload = new CaptionPayload(
-                Type: "caption",
-                MeetingId: _threadId,
-                Speaker: speaker.DisplayName,
-                SpeakerId: speaker.Id,
-                SourceLang: sourceLang,
-                Text: BuildTextDictionary(captions, sourceLang, sourceText),
-                IsFinal: true,
-                StartMs: startMs,
-                EndMs: endMs
-            );
-
-            // send the transcript to the websocket clients
-            await _wsPublisher.PublishCaptionAsync(payload);
-
-            var listKey = $"list:{_threadId}";
-            await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
-            await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
-
-            // For each available caption (language -> text), synthesize speech and publish in parallel
-            await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+            return speaker;
         }
 
         private async Task TextToSpeechBatch(Dictionary<string, string> captions, string speakerId)

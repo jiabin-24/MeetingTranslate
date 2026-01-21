@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
 
 export default function CaptionsPanel(props) {
@@ -38,14 +38,19 @@ export default function CaptionsPanel(props) {
         return () => el.removeEventListener('scroll', onScroll);
     }, []);
 
-    useEffect(() => {
+    // Scroll to bottom whenever the lines array changes (including partial updates)
+    // and auto-scroll is enabled. useLayoutEffect ensures we measure/adjust
+    // scroll before the browser paints the updated content to avoid visual
+    // jumpiness.
+    useLayoutEffect(() => {
         if (!autoScrollEnabled) return;
         const el = containerRef.current;
         if (!el) return;
+        // perform scroll on next frame to ensure DOM has been updated
         requestAnimationFrame(() => {
-            el.scrollTop = el.scrollHeight;
+            try { el.scrollTop = el.scrollHeight; } catch (_) { }
         });
-    }, [(lines || []).length, autoScrollEnabled]);
+    }, [lines, autoScrollEnabled]);
 
     return (
         <div>

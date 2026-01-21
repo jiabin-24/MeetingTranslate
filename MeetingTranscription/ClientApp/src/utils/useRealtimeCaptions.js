@@ -619,7 +619,27 @@ function mergeCaptions(prev, incoming) {
         const filtered = prev.filter(l => !(l.startMs === incoming.startMs && l.endMs === incoming.endMs));
         return sortByTime([...filtered, incoming]);
     } else {
-        return sortByTime([...prev, incoming]);
+        // For partial (non-final) captions update a single existing line
+        // instead of appending a new one each time. Match by speakerId (or speaker)
+        // and sourceLang so interim updates replace the previous partial from
+        // the same speaker/language pair.
+        const matchKey = (c) => {
+            const idA = c.speakerId || c.speaker || '';
+            const idB = incoming.speakerId || incoming.speaker || '';
+            const langA = c.sourceLang || '';
+            const langB = incoming.sourceLang || '';
+            return !c.isFinal && idA === idB && langA === langB;
+        };
+
+        const idx = prev.findIndex(matchKey);
+        if (idx >= 0) {
+            const copy = prev.slice();
+            copy[idx] = incoming;
+            return copy;
+        }
+
+        // No existing partial for this speaker/lang — append to the end
+        return [...prev, incoming];
     }
 }
 
