@@ -51,14 +51,11 @@ $BaseSecrets | ForEach-Object {
 # App Secrets required to be published to the keyvault
 $RequiredSecrets = @(
     @{ Name = 'localadmin'; Message = 'Enter the VMSS admin password'; },
-    @{ Name = 'AadAppId'; Message = 'Enter the Azure Bot AAD Client Id'; },
-    @{ Name = 'AadAppSecret'; Message = 'Enter the Azure Bot AAD Client Secret'; },
-    @{ Name = 'ServiceDNSName'; Message = 'Enter the DNS value that will point to the load balancer (ie bot.example.com)'; }
+    @{ Name = 'AadAppSecret'; Message = 'Enter the Azure Bot AAD Client Secret'; }
 )
 
 $SpeechServicesSecrets = @(
-    @{ Name = 'SpeechConfigKey'; Message = 'Enter the Speech Service Key'; },
-    @{ Name = 'SpeechConfigRegion'; Message = 'Enter the Azure Region for your Speech Service (ie centralus, eastus2)'; }
+    @{ Name = 'SpeechConfigKey'; Message = 'Enter the Speech Service Key'; }
 )
 
 Write-Warning -Message "There are [$($RequiredSecrets.count)] Secrets required, you can enter them now or cancel."

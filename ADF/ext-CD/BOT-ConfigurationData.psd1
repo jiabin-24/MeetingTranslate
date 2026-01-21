@@ -68,16 +68,13 @@
             )
             
             EnvironmentVarSet           = @(
-                @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'AadAppId' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'AadAppSecret' },
-                @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'ServiceDnsName' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'SpeechConfigKey' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'CertificateThumbprint' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'Prefix' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'OrgName' },
                 @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'App' },
-                @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'Environment' },
-                @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'SpeechConfigRegion' }
+                @{Prefix = 'AppSettings:'; KVName = '{0}-kv'; Name = 'Environment' }
             )
 
             # Blob copy with Managed Identity - Oauth2
