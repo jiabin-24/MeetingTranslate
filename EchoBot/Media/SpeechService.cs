@@ -5,6 +5,7 @@ using MeetingTranscription.Models.Configuration;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph.Communications.Common;
 using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
 using Sprache;
@@ -33,6 +34,8 @@ namespace EchoBot.Media
 
         // Mapping between audio socket Id and participant Id.
         private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap;
+
+        private int _placeHolderIndex;
 
         /// <summary>
         /// The logger
@@ -68,7 +71,7 @@ namespace EchoBot.Media
 
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "300"); // 间隔静音多长时间认为一句话结束
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "100"); // 间隔静音多长时间认为一句话结束
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 初始静音超时
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy"); // 语言检测优先准确率
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
@@ -399,9 +402,20 @@ namespace EchoBot.Media
         private Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
         {
             var dict = captions.ToDictionary(k => k.Key, v => v.Value);
-            // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
-            dict[sourceLang] = sourceText;
+            dict[sourceLang] = sourceText; // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
+
+            _translatorOptions.Routing.Keys.ForEach(lang =>
+            {
+                if (!dict.ContainsKey(lang))
+                    dict[lang] = GetPlaceHolderText();
+            });
             return dict;
+        }
+
+        private string GetPlaceHolderText()
+        {
+            _placeHolderIndex++;
+            return $"Translating{new string('.', _placeHolderIndex % 4)}";
         }
     }
 }
