@@ -433,11 +433,6 @@ function mergeCaptions(prev, incoming) {
 
 function sortByTime(arr) {
     return arr.slice().sort((a, b) => {
-        // Put final captions before partial (non-final) ones
-        const aFinal = !!a.isFinal;
-        const bFinal = !!b.isFinal;
-        if (aFinal !== bFinal) return aFinal ? -1 : 1;
-
         const sa = a.startMs ?? 0;
         const sb = b.startMs ?? 0;
         if (sa === sb) return (a.endMs ?? sa) - (b.endMs ?? sb);

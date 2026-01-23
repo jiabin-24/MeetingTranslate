@@ -71,8 +71,10 @@ namespace EchoBot.Media
 
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "100"); // 间隔静音多长时间认为一句话结束
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 初始静音超时
+            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "300"); // 让断句更短
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
+            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "250"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
+            _speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Accuracy"); // 语言检测优先准确率
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
             _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
@@ -216,16 +218,9 @@ namespace EchoBot.Media
                         var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                         _logger.LogInformation($"RECOGNIZED in '{sourceLang}': Text={original}");
 
-                        var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
                         try
                         {
-                            // capture a snapshot of active speakers at the time the recognition result arrived
-                            var activeSpeakersSnapshot = _activeSpeakers;
-
-                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
-
-                            _ = Transcript(translated, true, e.Offset, e.Result.Duration, sourceLang, original, activeSpeakersSnapshot);
+                            _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration);
                         }
                         catch (Exception ex)
                         {
@@ -244,9 +239,9 @@ namespace EchoBot.Media
 
                     if (e.Reason == CancellationReason.Error)
                     {
-                        _logger.LogInformation($"CANCELED: ErrorCode={e.ErrorCode}");
-                        _logger.LogInformation($"CANCELED: ErrorDetails={e.ErrorDetails}");
-                        _logger.LogInformation($"CANCELED: Did you update the subscription info?");
+                        _logger.LogError($"CANCELED: ErrorCode={e.ErrorCode}");
+                        _logger.LogError($"CANCELED: ErrorDetails={e.ErrorDetails}");
+                        _logger.LogError($"CANCELED: Did you update the subscription info?");
                     }
 
                     stopRecognition.TrySetResult(0);
@@ -334,6 +329,18 @@ namespace EchoBot.Media
             }
         }
 
+        private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration)
+        {
+            // capture a snapshot of active speakers at the time the recognition result arrived
+            var activeSpeakersSnapshot = _activeSpeakers;
+            var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
+
+            await Transcript(translated, true, offset, duration, sourceLang, original, activeSpeakersSnapshot);
+        }
+
         private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration, string sourceLang, string sourceText,
             uint[]? activeSpeakersSnapshot = null)
         {
@@ -404,18 +411,13 @@ namespace EchoBot.Media
             var dict = captions.ToDictionary(k => k.Key, v => v.Value);
             dict[sourceLang] = sourceText; // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
 
+            _placeHolderIndex++;
             _translatorOptions.Routing.Keys.ForEach(lang =>
             {
                 if (!dict.ContainsKey(lang))
-                    dict[lang] = GetPlaceHolderText();
+                    dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
-        }
-
-        private string GetPlaceHolderText()
-        {
-            _placeHolderIndex++;
-            return $"Translating{new string('.', _placeHolderIndex % 4)}";
         }
     }
 }
