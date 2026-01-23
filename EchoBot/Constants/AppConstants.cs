@@ -1,4 +1,6 @@
-﻿namespace EchoBot.Constants
+﻿using System.Collections.Concurrent;
+
+namespace EchoBot.Constants
 {
     /// <summary>
     /// Class AzureConstants.
@@ -14,5 +16,13 @@
         public const string AuthDomain = "https://api.aps.skype.com/v1/.well-known/OpenIdConfiguration";
 
         public const string PlaceCallEndpointUrl = "https://graph.microsoft.com/v1.0";
+
+        /// <summary>
+        /// Gets the thread-safe dictionary that stores meeting information for bots, keyed by bot identifier.
+        /// </summary>
+        /// <remarks>This dictionary allows concurrent access and updates from multiple threads. Each key
+        /// represents a unique bot identifier, and the corresponding value contains meeting-related data for that
+        /// bot.</remarks>
+        public static ConcurrentDictionary<string, int> BotMeetingsDictionary { get; } = new ConcurrentDictionary<string, int>();
     }
 }

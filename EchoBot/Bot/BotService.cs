@@ -206,7 +206,7 @@ namespace EchoBot.Bot
                 };
             }
 
-            if (!this.CallHandlers.TryGetValue(joinParams.ChatInfo.ThreadId, out CallHandler? call))
+            if (!this.CallHandlers.TryGetValue(joinParams.ChatInfo.ThreadId!, out CallHandler? call))
             {
                 var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
                 statefulCall.GraphLogger.Info($"Call creation complete: {statefulCall.Id}");
@@ -310,14 +310,14 @@ namespace EchoBot.Bot
         {
             foreach (var call in args.AddedResources)
             {
-                var threadId = call.Resource.ChatInfo.ThreadId;
-                var callHandler = new CallHandler(call, threadId, _settings);
+                var threadId = call.Resource.ChatInfo.ThreadId!;
+                var callHandler = new CallHandler(call, _settings);
                 this.CallHandlers[threadId] = callHandler;
             }
 
             foreach (var call in args.RemovedResources)
             {
-                var threadId = call.Resource.ChatInfo.ThreadId;
+                var threadId = call.Resource.ChatInfo.ThreadId!;
                 if (this.CallHandlers.TryRemove(threadId, out CallHandler? handler))
                 {
                     Task.Run(async () => {

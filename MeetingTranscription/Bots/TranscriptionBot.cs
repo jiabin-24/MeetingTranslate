@@ -1,6 +1,7 @@
 ﻿using Azure.AI.Agents.Persistent;
 using Azure.Identity;
 using EchoBot.Bot;
+using EchoBot.Constants;
 using EchoBot.Models;
 using MeetingTranscription.Helpers;
 using MeetingTranscription.Models.Configuration;
@@ -43,14 +44,6 @@ namespace MeetingTranscription.Bots
         private readonly ConcurrentDictionary<string, string> _transcriptsDictionary;
 
         private readonly PersistentAgentsClient _agentClient;
-
-        /// <summary>
-        /// Gets the thread-safe dictionary that stores meeting information for bots, keyed by bot identifier.
-        /// </summary>
-        /// <remarks>This dictionary allows concurrent access and updates from multiple threads. Each key
-        /// represents a unique bot identifier, and the corresponding value contains meeting-related data for that
-        /// bot.</remarks>
-        private static ConcurrentDictionary<string, string> _botMeetingsDictionary { get; } = new ConcurrentDictionary<string, string>();
 
         /// <summary>
         /// Instance of card factory to create adaptive cards.
@@ -207,7 +200,7 @@ namespace MeetingTranscription.Bots
                     JoinUrl = meeting.JoinUrl.ToString()
                 });
 
-                _botMeetingsDictionary.TryAdd(meeting.Id, botMeeting!.Resource!.ChatInfo!.ThreadId);
+                AppConstants.BotMeetingsDictionary.TryAdd(botMeeting!.Resource!.ChatInfo!.ThreadId, 0);
             }
             catch (Exception ex)
             {
@@ -228,11 +221,12 @@ namespace MeetingTranscription.Bots
             try
             {
                 var meetingInfo = await TeamsInfo.GetMeetingInfoAsync(turnContext);
+                var threadId = meetingInfo.Conversation.Id;
 
                 _logger.LogInformation($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
                 // End the bot's call in the meeting
-                if (_botMeetingsDictionary.TryRemove(meeting.Id, out var threadId))
+                if (AppConstants.BotMeetingsDictionary.TryRemove(threadId, out _))
                     await _botService.EndCallByThreadIdAsync(threadId);
             }
             catch (Exception ex)
