@@ -433,8 +433,8 @@ function mergeCaptions(prev, incoming) {
 
 function sortByTime(arr) {
     return arr.slice().sort((a, b) => {
-        const sa = a.startMs ?? 0;
-        const sb = b.startMs ?? 0;
+        const sa = a.realStartMs ?? 0;
+        const sb = b.realStartMs ?? 0;
         if (sa === sb) return (a.endMs ?? sa) - (b.endMs ?? sb);
         return sa - sb;
     });

@@ -191,15 +191,18 @@ namespace EchoBot.Bot
                 if (e.Buffer.UnmixedAudioBuffers == null)
                     return;
 
-                foreach (var buffer in e.Buffer.UnmixedAudioBuffers)
+                var tasks = e.Buffer.UnmixedAudioBuffers.Select(buffer =>
                 {
                     var data = new byte[buffer.Length];
                     Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
 
                     var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
                     // send audio buffer to language service for processing
-                    await _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
-                }
+                    return _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
+                }).ToArray();
+
+                if (tasks.Length > 0)
+                    await Task.WhenAll(tasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

@@ -111,6 +111,8 @@ export default function CaptionsPanel(props) {
                     return (
                         <div
                             key={`${l.startMs}-${l.endMs}-${i}`}
+                            data-start-ms={l.realStartMs}
+                            data-speakerId={l.speakerId}
                             className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
                             <div className="caption-speaker">[{speaker}]</div>

@@ -16,7 +16,8 @@ namespace EchoBot.Models
             [property: JsonPropertyName("text")] Dictionary<string, string> Text,
             [property: JsonPropertyName("isFinal")] bool IsFinal,         // partial / final
             [property: JsonPropertyName("startMs")] long? StartMs,
-            [property: JsonPropertyName("endMs")] long? EndMs
+            [property: JsonPropertyName("endMs")] long? EndMs,
+            [property: JsonPropertyName("realStartMs")] long? RealStartMs
         );
 
         // 首条鉴权消息（示例）

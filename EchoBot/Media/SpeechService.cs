@@ -327,8 +327,9 @@ namespace EchoBot.Media
         private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration,
             string sourceLang, string sourceText, string audioId)
         {
-            long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks
-            long endMs = startMs + (long)duration.TotalMilliseconds;
+            long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks，offset 是针对 Speech Regonizer 识别的时差（不能用于多 Regonizer 的线性排序）
+            long realStartMs = (DateTime.UtcNow - DateTime.UnixEpoch).Ticks / 10_000;
+            long endMs = realStartMs + (long)duration.TotalMilliseconds;
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
             var speaker = GetParticipant(audioId);
@@ -341,7 +342,8 @@ namespace EchoBot.Media
                 Text: BuildTextDictionary(captions, sourceLang, sourceText),
                 IsFinal: isFinal,
                 StartMs: startMs,
-                EndMs: endMs
+                EndMs: endMs,
+                RealStartMs: realStartMs
             );
 
             // send the transcript to the websocket clients
