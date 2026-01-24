@@ -43,17 +43,19 @@ namespace EchoBot.Media
         private readonly ILogger _logger;
         private readonly AppSettings _appSettings;
         private readonly TranslatorOptions _translatorOptions;
-        private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
         private readonly SpeechConfig _speechConfig;
-        private SpeechRecognizer _recognizer;
         private readonly SpeechSynthesizer _synthesizer;
         private readonly ICaptionPublisher _wsPublisher;
         private readonly ITranslatorClient _translatorClient;
         private readonly IConnectionMultiplexer _mux;
         private readonly string _threadId;
-        private uint[]? _activeSpeakers;
+        // per-speaker streams and recognizers
+        private readonly ConcurrentDictionary<string, PushAudioInputStream> _streamBySpeaker = new();
+        private readonly ConcurrentDictionary<string, SpeechRecognizer> _recognizerBySpeaker = new();
+        private readonly ConcurrentDictionary<SpeechRecognizer, string> _speakerByRecognizer = new();
+        private readonly AutoDetectSourceLanguageConfig _autoDetect;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
@@ -68,6 +70,11 @@ namespace EchoBot.Media
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _audioToIdentityMap = audioToIdentityMap;
             _threadId = threadId ?? string.Empty;
+
+            // prepare auto-detect config for recognizers
+            var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
+                : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
+            _autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
 
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
@@ -86,32 +93,118 @@ namespace EchoBot.Media
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 
+        private async Task CreateRecognizerForSpeaker(string speakerId)
+        {
+            // create a dedicated push stream for this speaker
+            var stream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
+            var audioConfig = AudioConfig.FromStreamInput(stream);
+            var recognizer = new SpeechRecognizer(_speechConfig, _autoDetect, audioConfig);
+
+            // store mappings
+            _streamBySpeaker[speakerId] = stream;
+            _recognizerBySpeaker[speakerId] = recognizer;
+            _speakerByRecognizer[recognizer] = speakerId;
+
+            var stopRecognition = new TaskCompletionSource<int>();
+
+            // wire events
+            recognizer.Recognizing += (s, e) => Recognizer_Recognizing(s as SpeechRecognizer, e);
+            recognizer.Recognized += (s, e) => Recognizer_Recognized(s as SpeechRecognizer, e);
+            recognizer.Canceled += (s, e) =>
+            {
+                _logger.LogWarning($"CANCELED: Reason={e.Reason}");
+                if (e.Reason == CancellationReason.Error)
+                {
+                    _logger.LogError($"CANCELED: ErrorCode={e.ErrorCode}");
+                    _logger.LogError($"CANCELED: ErrorDetails={e.ErrorDetails}");
+                    _logger.LogError($"CANCELED: Did you update the subscription info?");
+                }
+                stopRecognition.TrySetResult(0);
+            };
+            recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
+            recognizer.SessionStopped += (s, e) =>
+            {
+                _logger.LogInformation("Session stopped event.\r\nStop recognition.");
+                stopRecognition.TrySetResult(0);
+            };
+
+            // start continuous recognition
+            await recognizer.StartContinuousRecognitionAsync();
+            Task.WaitAny([stopRecognition.Task]);
+
+            // Stops recognition.
+            await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+        }
+
+        private void Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        {
+            if (sender == null) return;
+            if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+
+            var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
+            _logger.LogInformation($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
+
+            try
+            {
+                var partialText = e.Result.Text;
+                if (string.IsNullOrWhiteSpace(partialText))
+                    return;
+
+                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
+                _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, speakerId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish partial caption");
+            }
+        }
+
+        private void Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        {
+            if (sender == null) return;
+            if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+
+            if (e.Result.Reason == ResultReason.RecognizedSpeech)
+            {
+                var original = e.Result.Text;
+                if (string.IsNullOrEmpty(original)) return;
+
+                var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
+                _logger.LogInformation($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
+
+                try
+                {
+                    _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"Translate failed: {ex.Message}");
+                }
+            }
+        }
+
         /// <summary>
         /// Appends the audio buffer.
         /// </summary>
         /// <param name="audioBuffer"></param>
-        public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer)
+        /// <param name="speakerId">Optional explicit speaker id to route to.</param>
+        public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
-            // remember active speakers from this buffer so we can attribute transcripts
-            if (audioBuffer.ActiveSpeakers != null && audioBuffer.ActiveSpeakers.Length > 0)
-                _activeSpeakers = audioBuffer.ActiveSpeakers;
-
-            if (!_isRunning)
-            {
-                Start();
-                await ProcessSpeech();
-            }
+            if (!_isRunning) { Start(); }
 
             try
             {
-                // audio for a 1:1 call
                 var bufferLength = audioBuffer.Length;
                 if (bufferLength > 0)
                 {
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    _audioInputStream.Write(buffer);
+                    if (!_streamBySpeaker.ContainsKey(speakerId))
+                        await CreateRecognizerForSpeaker(speakerId);
+
+                    if (_streamBySpeaker.TryGetValue(speakerId, out var pushStream))
+                        pushStream.Write(buffer);
                 }
             }
             catch (Exception e)
@@ -140,11 +233,22 @@ namespace EchoBot.Media
 
             if (_isRunning)
             {
-                await _recognizer.StopContinuousRecognitionAsync();
-                _recognizer.Dispose();
-                _audioInputStream.Close();
+                // stop and dispose any per-speaker recognizers
+                foreach (var kv in _recognizerBySpeaker)
+                {
+                    try { kv.Value.StopContinuousRecognitionAsync().Wait(1000); } catch { }
+                    try { kv.Value.Dispose(); } catch { }
+                }
+                _recognizerBySpeaker.Clear();
 
-                _audioInputStream.Dispose();
+                // close per-speaker push streams
+                foreach (var kv in _streamBySpeaker)
+                {
+                    try { kv.Value.Close(); } catch { }
+                    try { kv.Value.Dispose(); } catch { }
+                }
+                _streamBySpeaker.Clear();
+
                 _audioOutputStream.Dispose();
                 _synthesizer.Dispose();
 
@@ -161,125 +265,6 @@ namespace EchoBot.Media
             {
                 _isRunning = true;
             }
-        }
-
-        /// <summary>
-        /// Processes this instance.
-        /// </summary>
-        private async Task ProcessSpeech()
-        {
-            try
-            {
-                var stopRecognition = new TaskCompletionSource<int>();
-
-                using (var audioInput = AudioConfig.FromStreamInput(_audioInputStream))
-                {
-                    if (_recognizer == null)
-                    {
-                        _logger.LogInformation("init recognizer");
-
-                        // 自动检测源语言以及其目标语言对应的 custom speech endpoint
-                        var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
-                            : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
-                        var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
-
-                        _recognizer = new SpeechRecognizer(_speechConfig, autoDetect, audioInput);
-                    }
-                }
-
-                _recognizer.Recognizing += (s, e) =>
-                {
-                    var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-                    _logger.LogInformation($"RECOGNIZING in '{sourceLang}': Text={e.Result.Text}");
-
-                    try
-                    {
-                        var partialText = e.Result.Text;
-                        if (string.IsNullOrWhiteSpace(partialText))
-                            return;
-
-                        var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
-                        _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, _activeSpeakers);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to publish partial caption");
-                    }
-                };
-
-                _recognizer.Recognized += async (s, e) =>
-                {
-                    if (e.Result.Reason == ResultReason.RecognizedSpeech)
-                    {
-                        var original = e.Result.Text; // 原文
-                        if (string.IsNullOrEmpty(original))
-                            return;
-
-                        var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-                        _logger.LogInformation($"RECOGNIZED in '{sourceLang}': Text={original}");
-
-                        try
-                        {
-                            _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError($"Translate failed: {ex.Message}");
-                        }
-                    }
-                    else if (e.Result.Reason == ResultReason.NoMatch)
-                    {
-                        _logger.LogInformation($"NOMATCH: Speech could not be recognized.");
-                    }
-                };
-
-                _recognizer.Canceled += (s, e) =>
-                {
-                    _logger.LogInformation($"CANCELED: Reason={e.Reason}");
-
-                    if (e.Reason == CancellationReason.Error)
-                    {
-                        _logger.LogError($"CANCELED: ErrorCode={e.ErrorCode}");
-                        _logger.LogError($"CANCELED: ErrorDetails={e.ErrorDetails}");
-                        _logger.LogError($"CANCELED: Did you update the subscription info?");
-                    }
-
-                    stopRecognition.TrySetResult(0);
-                };
-
-                _recognizer.SessionStarted += async (s, e) =>
-                {
-                    _logger.LogInformation("Session started event.");
-                };
-
-                _recognizer.SessionStopped += (s, e) =>
-                {
-                    _logger.LogInformation("Session stopped event.");
-                    _logger.LogInformation("Stop recognition.");
-                    stopRecognition.TrySetResult(0);
-                };
-
-                // Starts continuous recognition. Uses StopContinuousRecognitionAsync() to stop recognition.
-                await _recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
-
-                // Waits for completion.
-                // Use Task.WaitAny to keep the task rooted.
-                Task.WaitAny(new[] { stopRecognition.Task });
-
-                // Stops recognition.
-                await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException ex)
-            {
-                _logger.LogError(ex, "The queue processing task object has been disposed.");
-            }
-            catch (Exception ex)
-            {
-                // Catch all other exceptions and log
-                _logger.LogError(ex, "Caught Exception");
-            }
-
-            _isDraining = false;
         }
 
         private async Task TextToSpeech(string text, string lang, string speakerId)
@@ -329,25 +314,24 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration)
+        private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
         {
-            // capture a snapshot of active speakers at the time the recognition result arrived
-            var activeSpeakersSnapshot = _activeSpeakers;
             var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
-            await Transcript(translated, true, offset, duration, sourceLang, original, activeSpeakersSnapshot);
+            await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
         }
 
-        private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration, string sourceLang, string sourceText,
-            uint[]? activeSpeakersSnapshot = null)
+        private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration,
+            string sourceLang, string sourceText, string audioId)
         {
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks
             long endMs = startMs + (long)duration.TotalMilliseconds;
 
-            var speaker = GetParticipant(activeSpeakersSnapshot);
+            // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
+            var speaker = GetParticipant(audioId);
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: _threadId,
@@ -374,16 +358,12 @@ namespace EchoBot.Media
             await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
         }
 
-        private Models.Participant GetParticipant(uint[]? activeSpeakersSnapshot = null)
+        private Models.Participant GetParticipant(string audioId)
         {
             // determine speaker label from active speakers if available
             var speaker = new Models.Participant { DisplayName = "Bot" };
-            if (activeSpeakersSnapshot is { Length: > 0 })
-            {
-                var audioId = activeSpeakersSnapshot[0].ToString();
-                if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
-                    speaker = new Models.Participant { DisplayName = $"Speaker-{activeSpeakersSnapshot[0]}" };
-            }
+            if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
+                speaker = new Models.Participant { DisplayName = $"Speaker-{audioId}" };
             return speaker;
         }
 

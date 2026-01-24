@@ -45,6 +45,22 @@ namespace EchoBot.Util
             return audioMediaBuffers;
         }
 
+        /// <summary>
+        /// Create a single AudioMediaBuffer from a byte array. Caller is responsible for disposing the returned buffer.
+        /// </summary>
+        public static AudioMediaBuffer CreateAudioMediaBuffer(byte[] buffer, long referenceTime, ILogger logger)
+        {
+            if (buffer == null || buffer.Length == 0)
+                throw new ArgumentException("buffer must not be null or empty", nameof(buffer));
+
+            var length = buffer.Length;
+            IntPtr unmanagedBuffer = Marshal.AllocHGlobal(length);
+            Marshal.Copy(buffer, 0, unmanagedBuffer, length);
+            var audioBuffer = new AudioSendBuffer(unmanagedBuffer, length, AudioFormat.Pcm16K, referenceTime);
+            logger.LogTrace("created 1 AudioMediaBuffer");
+            return audioBuffer;
+        }
+
         public static List<AudioMediaBuffer> CreateAudioMediaBuffers(byte[] buffer, long currentTick, ILogger logger)
         {
             var audioMediaBuffers = new List<AudioMediaBuffer>();

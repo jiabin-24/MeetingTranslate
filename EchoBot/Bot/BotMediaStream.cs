@@ -188,27 +188,17 @@ namespace EchoBot.Bot
             {
                 if (!startVideoPlayerCompleted.Task.IsCompleted) { return; }
 
-                if (_languageService != null)
-                {
-                    // send audio buffer to language service for processing
-                    // the particpant talking will hear the bot repeat what they said
-                    await _languageService.AppendAudioBuffer(e.Buffer);
-                    e.Buffer.Dispose();
-                }
-                else
-                {
-                    // send audio buffer back on the audio socket
-                    // the particpant talking will hear themselves
-                    var length = e.Buffer.Length;
-                    if (length > 0)
-                    {
-                        var buffer = new byte[length];
-                        Marshal.Copy(e.Buffer.Data, buffer, 0, (int)length);
+                if (e.Buffer.UnmixedAudioBuffers == null)
+                    return;
 
-                        var currentTick = DateTime.Now.Ticks;
-                        this.audioMediaBuffers = Util.Utilities.CreateAudioMediaBuffers(buffer, currentTick, _logger);
-                        await this.audioVideoFramePlayer.EnqueueBuffersAsync(this.audioMediaBuffers, new List<VideoMediaBuffer>());
-                    }
+                foreach (var buffer in e.Buffer.UnmixedAudioBuffers)
+                {
+                    var data = new byte[buffer.Length];
+                    Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
+
+                    var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
+                    // send audio buffer to language service for processing
+                    await _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
                 }
             }
             catch (Exception ex)
@@ -227,8 +217,6 @@ namespace EchoBot.Bot
             this.audioMediaBuffers = e.AudioMediaBuffers;
             var result = Task.Run(async () => await this.audioVideoFramePlayer.EnqueueBuffersAsync(this.audioMediaBuffers, new List<VideoMediaBuffer>())).GetAwaiter();
         }
-
-        
     }
 }
 
