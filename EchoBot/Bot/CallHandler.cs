@@ -43,7 +43,7 @@ namespace EchoBot.Bot
             this.Call = statefulCall;
             this.Call.OnUpdated += this.CallOnUpdated;
             this.Call.Participants.OnUpdated += this.ParticipantsOnUpdated;
-            
+
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
             this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, _audioToIdentityMap, this.GraphLogger, settings);
         }
@@ -60,6 +60,11 @@ namespace EchoBot.Bot
             base.Dispose(disposing);
             this.Call.OnUpdated -= this.CallOnUpdated;
             this.Call.Participants.OnUpdated -= this.ParticipantsOnUpdated;
+
+            foreach (var participant in this.Call.Participants)
+            {
+                participant.OnUpdated -= this.OnParticipantUpdated;
+            }
 
             this.BotMediaStream?.ShutdownAsync().ForgetAndLogExceptionAsync(this.GraphLogger);
         }
@@ -114,11 +119,13 @@ namespace EchoBot.Bot
             if (added)
             {
                 participants.Add(participant);
+                participant.OnUpdated += this.OnParticipantUpdated;
                 this.SubscribeToParticipantAudio(participant, forceSubscribe: false);
             }
             else
             {
                 participants.Remove(participant);
+                participant.OnUpdated -= this.OnParticipantUpdated;
                 UnsubscribeFromParticipantAudio(participant);
             }
             return CreateParticipantUpdateJson(participant.Id, participantDisplayName);
@@ -169,9 +176,29 @@ namespace EchoBot.Bot
             {
                 if (!AppConstants.BotMeetingsDictionary.TryRemove(_threadId, out _))
                     return;
-                var botService = ServiceLocator.GetRequiredService<IBotService>();
-                botService.EndCallByThreadIdAsync(_threadId);
+                ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
             }
+        }
+
+        private void OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
+        {
+            var oldSourceId = args.OldResource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault().SourceId;
+            var newSourceId = args.NewResource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault().SourceId;
+
+            var newIdentityId = sender.Resource.Info.Identity.User.Id;
+            var newIdentity = IdentityToParticipant(sender.Resource.Info.Identity.User, newSourceId);
+
+            if (_audioToIdentityMap.TryGetValue(oldSourceId, out Models.Participant oldIdentity) && !newIdentityId.Equals(oldIdentity.Id))
+            {
+                _audioToIdentityMap.TryAdd(newSourceId!, newIdentity);
+                return;
+            }
+
+            if (string.Equals(oldSourceId, newSourceId))
+                return;
+
+            _audioToIdentityMap.TryRemove(oldSourceId!, out _);
+            _audioToIdentityMap.TryAdd(newSourceId!, newIdentity);
         }
 
         /// <summary>
@@ -191,31 +218,37 @@ namespace EchoBot.Bot
         private void SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
             // filter the mediaStreams to see if the participant has a video send
-            var participantSendCapableAudioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
-            if (participantSendCapableAudioStream != null)
+            var audioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
+            if (audioStream != null)
             {
-                _audioToIdentityMap.TryAdd(participantSendCapableAudioStream.SourceId!, participant.Resource.Info.Identity.User != null ? IdentityToParticipant(participant.Resource.Info.Identity.User)
-                    : new Models.Participant { Id = participantSendCapableAudioStream.SourceId! });
+                _audioToIdentityMap.TryAdd(audioStream.SourceId, IdentityToParticipant(participant.Resource.Info.Identity.User, audioStream.SourceId));
             }
         }
 
         private void UnsubscribeFromParticipantAudio(IParticipant participant)
         {
-            var participantSendCapableAudioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
-            if (participantSendCapableAudioStream != null)
+            var audioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
+            if (audioStream != null)
             {
-                _audioToIdentityMap.TryRemove(participantSendCapableAudioStream.SourceId!, out _);
+                _audioToIdentityMap.TryRemove(audioStream.SourceId!, out _);
             }
         }
 
-        private static Models.Participant IdentityToParticipant(Identity identity)
+        private static Models.Participant IdentityToParticipant(Identity identity, string sourceId)
         {
-            var participant = new Models.Participant
+            if (identity == null)
+            {
+                return new Models.Participant
+                {
+                    Id = sourceId,
+                    DisplayName = string.Empty
+                };
+            }
+            return new Models.Participant
             {
                 Id = identity.Id!,
                 DisplayName = identity?.DisplayName ?? string.Empty
             };
-            return participant;
         }
     }
 }
