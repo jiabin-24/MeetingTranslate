@@ -13,6 +13,7 @@ using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using static EchoBot.Models.Caption;
 
 namespace EchoBot.Media
@@ -108,8 +109,8 @@ namespace EchoBot.Media
             var stopRecognition = new TaskCompletionSource<int>();
 
             // wire events
-            recognizer.Recognizing += (s, e) => Recognizer_Recognizing(s as SpeechRecognizer, e);
-            recognizer.Recognized += (s, e) => Recognizer_Recognized(s as SpeechRecognizer, e);
+            recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as SpeechRecognizer, e);
+            recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as SpeechRecognizer, e);
             recognizer.Canceled += (s, e) =>
             {
                 _logger.LogWarning($"CANCELED: Reason={e.Reason}");
@@ -129,20 +130,20 @@ namespace EchoBot.Media
             };
 
             // start continuous recognition
-            await recognizer.StartContinuousRecognitionAsync();
+            await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
             Task.WaitAny([stopRecognition.Task]);
 
             // Stops recognition.
             await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
         }
 
-        private void Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        private async Task Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
             if (sender == null) return;
             if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
 
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-            _logger.LogInformation($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
+            _logger.LogDebug($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
 
             try
             {
@@ -159,7 +160,7 @@ namespace EchoBot.Media
             }
         }
 
-        private void Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        private async Task Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
             if (sender == null) return;
             if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
@@ -170,11 +171,11 @@ namespace EchoBot.Media
                 if (string.IsNullOrEmpty(original)) return;
 
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-                _logger.LogInformation($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
+                _logger.LogDebug($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
 
                 try
                 {
-                    _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
+                    await BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
                 }
                 catch (Exception ex)
                 {
