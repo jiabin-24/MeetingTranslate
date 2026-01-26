@@ -46,11 +46,24 @@ export default function CaptionsPanel(props) {
         if (!autoScrollEnabled) return;
         const el = containerRef.current;
         if (!el) return;
-        // perform scroll on next frame to ensure DOM has been updated
+
+        // Use smooth scrolling so newly-added final captions animate into view
+        // in a visually gentle way. Fall back to instant if smooth not supported.
         requestAnimationFrame(() => {
-            try { el.scrollTop = el.scrollHeight; } catch (_) { }
+            try {
+                if (typeof el.scrollTo === 'function') {
+                    try {
+                        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+                    } catch (_) {
+                        el.scrollTop = el.scrollHeight;
+                    }
+                } else {
+                    el.scrollTop = el.scrollHeight;
+                }
+            } catch (_) { }
         });
     }, [lines, autoScrollEnabled]);
+
 
     return (
         <div>
@@ -83,18 +96,18 @@ export default function CaptionsPanel(props) {
                         <span className="mic-icon" aria-hidden>
                             {audioEnabled ? (
                                 <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                             ) : (
                                 <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M9 21h6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    <path d="M4 4L20 20" stroke="#B00020" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M9 21h6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M4 4L20 20" stroke="#B00020" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                             )}
                         </span>
@@ -116,18 +129,18 @@ export default function CaptionsPanel(props) {
                             className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
                             <div className="caption-speaker">[{speaker}]</div>
-                                    {viewMode !== 'translated' && (
-                                        <div className="caption-line original">
-                                            <span className="label">(orig)</span>
-                                            <span className="text">{original}</span>
-                                        </div>
-                                    )}
-                                    {viewMode !== 'original' && (
-                                        <div className="caption-line translated">
-                                            <span className="label">(tran)</span>
-                                            <span className="text">{translated}</span>
-                                        </div>
-                                    )}
+                            {viewMode !== 'translated' && (
+                                <div className="caption-line original">
+                                    <span className="label">(orig)</span>
+                                    <span className="text">{original}</span>
+                                </div>
+                            )}
+                            {viewMode !== 'original' && (
+                                <div className="caption-line translated">
+                                    <span className="label">(tran)</span>
+                                    <span className="text">{translated}</span>
+                                </div>
+                            )}
                         </div>
                     );
                 })}

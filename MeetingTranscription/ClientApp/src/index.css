@@ -33,6 +33,21 @@
 .caption-line.original .text { color: #888; }
 .caption-line.translated .text { color: #333; }
 
+/* Caption insert animation: slide up for final lines */
+@keyframes captions-slide-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.captions > .caption-block.final {
+  animation: captions-slide-up 420ms ease-out;
+  will-change: transform, opacity;
+}
+
+/* word-change highlight used by InlineDiff */
+.text .word-changed { background: rgba(255,236,140,0.7); transition: background-color 700ms ease, opacity 220ms ease; padding:0 2px; border-radius:2px; }
+.text .word-same { transition: opacity 220ms ease; }
+
 /* Toggle to show only translated text */
 /* translation-toggle removed (not used) */
 
