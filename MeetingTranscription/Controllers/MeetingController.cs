@@ -18,7 +18,7 @@ namespace MeetingTranscription.Controllers
             _mux = mux;
         }
 
-        [Route("getMeetingCaptions")]
+        [HttpGet("getMeetingCaptions")]
         public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string threadId)
         {
             var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{threadId}"))

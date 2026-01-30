@@ -70,6 +70,7 @@ static class Program
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
         builder.Services.AddMvc().AddSessionStateTempDataProvider();
+        builder.Services.AddSwaggerGen();
 
         // 分布式缓存
         var redisConfig = builder.Configuration.GetSection("Redis");
@@ -98,7 +99,11 @@ static class Program
         var app = builder.Build();
 
         if (app.Environment.IsDevelopment())
+        {
             app.UseDeveloperExceptionPage();
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
 
         app.UseCors("DevCors");
         app.UseDefaultFiles();
