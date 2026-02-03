@@ -472,7 +472,9 @@ export function useRealtimeCaptions(opts) {
             const hubUrl = opts.hubUrl || opts.url;
             const conn = new signalR.HubConnectionBuilder()
                 .withUrl(hubUrl)
-                .withAutomaticReconnect()
+                .withAutomaticReconnect({
+                    nextRetryDelayInMilliseconds: ctx => 2000   // 每 2 秒重连一次，永不停止
+                })
                 .build();
 
             connRef.current = conn;
