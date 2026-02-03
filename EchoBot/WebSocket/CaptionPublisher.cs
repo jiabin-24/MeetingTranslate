@@ -42,19 +42,17 @@ namespace EchoBot.WebSocket
             _wsHub = wsHub;
         }
 
-        public Task PublishCaptionAsync(CaptionPayload payload)
+        public async Task PublishCaptionAsync(CaptionPayload payload)
         {
             if (_sigHub != null)
             {
-                return _sigHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", new object?[] { payload }, default);
+                await _sigHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", new object?[] { payload }, default);
             }
 
             if (_wsHub != null)
             {
-                return _wsHub.BroadcastAsync(payload);
+                await _wsHub.BroadcastAsync(payload);
             }
-
-            return Task.CompletedTask;
         }
 
         public Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex)

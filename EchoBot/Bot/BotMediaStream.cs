@@ -53,7 +53,6 @@ namespace EchoBot.Bot
             ILocalMediaSession mediaSession,
             string callId,
             string threadId,
-            ConcurrentDictionary<string, Models.Participant> audioToIdentityMap,
             IGraphLogger graphLogger,
             AppSettings settings
         )
@@ -81,7 +80,7 @@ namespace EchoBot.Bot
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            _languageService = new SpeechService(_settings, audioToIdentityMap, threadId);
+            _languageService = new SpeechService(_settings, threadId);
             _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 

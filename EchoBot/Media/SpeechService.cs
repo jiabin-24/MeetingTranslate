@@ -13,7 +13,6 @@ using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using static EchoBot.Models.Caption;
 
 namespace EchoBot.Media
@@ -33,8 +32,10 @@ namespace EchoBot.Media
         /// </summary>
         protected bool _isDraining;
 
+        private readonly CacheHelper _cacheHelper;
+
         // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap;
+        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
 
         private int _placeHolderIndex;
 
@@ -61,7 +62,7 @@ namespace EchoBot.Media
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, ConcurrentDictionary<string, Models.Participant> audioToIdentityMap, string threadId = "")
+        public SpeechService(AppSettings settings, string threadId = "")
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
@@ -69,7 +70,7 @@ namespace EchoBot.Media
             _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm);
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
-            _audioToIdentityMap = audioToIdentityMap;
+            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _threadId = threadId ?? string.Empty;
 
             // prepare auto-detect config for recognizers
@@ -87,7 +88,7 @@ namespace EchoBot.Media
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
             _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "false"); // 始终使用增强模型
             _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
-            
+
             _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _wsPublisher = ServiceLocator.GetRequiredService<ICaptionPublisher>();
@@ -333,7 +334,7 @@ namespace EchoBot.Media
             long endMs = realStartMs + (long)duration.TotalMilliseconds;
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
-            var speaker = GetParticipant(audioId);
+            var speaker = await GetParticipant(audioId);
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: _threadId,
@@ -361,12 +362,14 @@ namespace EchoBot.Media
             await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
         }
 
-        private Models.Participant GetParticipant(string audioId)
+        private async Task<Models.Participant> GetParticipant(string audioId)
         {
             // determine speaker label from active speakers if available
-            var speaker = new Models.Participant { DisplayName = "Bot" };
-            if (!_audioToIdentityMap.TryGetValue(audioId, out speaker))
-                speaker = new Models.Participant { DisplayName = $"Speaker-{audioId}" };
+            _audioToIdentityMap.TryGetValue(audioId, out var speaker);
+            speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{_threadId}-{audioId}");
+            if (speaker != null)
+                _audioToIdentityMap[audioId] = speaker;
+            speaker ??= new Models.Participant { DisplayName = $"Speaker-{audioId}" };
             return speaker;
         }
 

@@ -85,6 +85,7 @@ static class Program
             options.ClientName = redisConfig["InstanceName"];
             return ConnectionMultiplexer.Connect(options);
         });
+        builder.Services.AddSingleton<CacheHelper>();
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("DevCors", builder =>

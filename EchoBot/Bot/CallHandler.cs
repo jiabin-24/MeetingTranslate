@@ -5,7 +5,6 @@ using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
-using System.Collections.Concurrent;
 using System.Timers;
 
 namespace EchoBot.Bot
@@ -29,8 +28,7 @@ namespace EchoBot.Bot
         /// <value>The bot media stream.</value>
         public BotMediaStream BotMediaStream { get; private set; }
 
-        // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
+        private readonly CacheHelper _cacheHelper;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
@@ -42,10 +40,11 @@ namespace EchoBot.Bot
         {
             this.Call = statefulCall;
             this.Call.OnUpdated += this.CallOnUpdated;
-            this.Call.Participants.OnUpdated += this.ParticipantsOnUpdated;
+            this.Call.Participants.OnUpdated += async (s, e) => await this.ParticipantsOnUpdated(s, e);
 
+            this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, _audioToIdentityMap, this.GraphLogger, settings);
+            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, this.GraphLogger, settings);
         }
 
         /// <inheritdoc/>
@@ -59,11 +58,11 @@ namespace EchoBot.Bot
         {
             base.Dispose(disposing);
             this.Call.OnUpdated -= this.CallOnUpdated;
-            this.Call.Participants.OnUpdated -= this.ParticipantsOnUpdated;
+            this.Call.Participants.OnUpdated -= async (s, e) => await this.ParticipantsOnUpdated(s, e);
 
             foreach (var participant in this.Call.Participants)
             {
-                participant.OnUpdated -= this.OnParticipantUpdated;
+                participant.OnUpdated -= async (s, e) => await this.OnParticipantUpdated(s, e);
             }
 
             this.BotMediaStream?.ShutdownAsync().ForgetAndLogExceptionAsync(this.GraphLogger);
@@ -114,19 +113,19 @@ namespace EchoBot.Bot
         /// <param name="added">if set to <c>true</c> [added].</param>
         /// <param name="participantDisplayName">Display name of the participant.</param>
         /// <returns>System.String.</returns>
-        private string UpdateParticipant(List<IParticipant> participants, IParticipant participant, bool added, string participantDisplayName = "")
+        private async Task<string> UpdateParticipant(List<IParticipant> participants, IParticipant participant, bool added, string participantDisplayName = "")
         {
             if (added)
             {
                 participants.Add(participant);
-                participant.OnUpdated += this.OnParticipantUpdated;
-                this.SubscribeToParticipantAudio(participant, forceSubscribe: false);
+                participant.OnUpdated += async (s, e) => await this.OnParticipantUpdated(s, e);
+                await SubscribeToParticipantAudio(participant, forceSubscribe: false);
             }
             else
             {
                 participants.Remove(participant);
-                participant.OnUpdated -= this.OnParticipantUpdated;
-                UnsubscribeFromParticipantAudio(participant);
+                participant.OnUpdated -= async (s, e) => await this.OnParticipantUpdated(s, e);
+                await UnsubscribeFromParticipantAudio(participant);
             }
             return CreateParticipantUpdateJson(participant.Id, participantDisplayName);
         }
@@ -136,7 +135,7 @@ namespace EchoBot.Bot
         /// </summary>
         /// <param name="eventArgs">The event arguments.</param>
         /// <param name="added">if set to <c>true</c> [added].</param>
-        private void UpdateParticipants(ICollection<IParticipant> eventArgs, bool added = true)
+        private async Task UpdateParticipants(ICollection<IParticipant> eventArgs, bool added = true)
         {
             foreach (var participant in eventArgs)
             {
@@ -148,13 +147,13 @@ namespace EchoBot.Bot
 
                 if (participantDetails != null)
                 {
-                    json = UpdateParticipant(this.BotMediaStream.participants, participant, added, participantDetails.DisplayName);
+                    json = await UpdateParticipant(this.BotMediaStream.participants, participant, added, participantDetails.DisplayName);
                 }
                 else if (participant.Resource.Info.Identity.AdditionalData?.Count > 0)
                 {
                     if (CheckParticipantIsUsable(participant))
                     {
-                        json = UpdateParticipant(this.BotMediaStream.participants, participant, added);
+                        json = await UpdateParticipant(this.BotMediaStream.participants, participant, added);
                     }
                 }
 
@@ -167,20 +166,20 @@ namespace EchoBot.Bot
         /// </summary>
         /// <param name="sender">Participants collection.</param>
         /// <param name="args">Event args containing added and removed participants.</param>
-        public void ParticipantsOnUpdated(IParticipantCollection sender, CollectionEventArgs<IParticipant> args)
+        public async Task ParticipantsOnUpdated(IParticipantCollection sender, CollectionEventArgs<IParticipant> args)
         {
-            UpdateParticipants(args.AddedResources);
-            UpdateParticipants(args.RemovedResources, false);
+            await UpdateParticipants(args.AddedResources);
+            await UpdateParticipants(args.RemovedResources, false);
 
             if (this.BotMediaStream.participants.Count == 0)
             {
                 if (!AppConstants.BotMeetingsDictionary.TryRemove(_threadId, out _))
                     return;
-                ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
+                await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
             }
         }
 
-        private void OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
+        private async Task OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
             var oldSourceId = args.OldResource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault().SourceId;
             var newSourceId = args.NewResource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault().SourceId;
@@ -188,17 +187,18 @@ namespace EchoBot.Bot
             var newIdentityId = sender.Resource.Info.Identity.User.Id;
             var newIdentity = IdentityToParticipant(sender.Resource.Info.Identity.User, newSourceId);
 
-            if (_audioToIdentityMap.TryGetValue(oldSourceId, out Models.Participant oldIdentity) && !newIdentityId.Equals(oldIdentity.Id))
+            var oldIdentity = await _cacheHelper.GetAsync<Models.Participant>(ParticipantCacheKey(oldSourceId));
+            if (oldIdentity != null && !newIdentityId.Equals(oldIdentity.Id))
             {
-                _audioToIdentityMap.TryAdd(newSourceId!, newIdentity);
+                await _cacheHelper.GetOrSetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), () => newIdentity);
                 return;
             }
 
             if (string.Equals(oldSourceId, newSourceId))
                 return;
 
-            _audioToIdentityMap.TryRemove(oldSourceId!, out _);
-            _audioToIdentityMap.TryAdd(newSourceId!, newIdentity);
+            await _cacheHelper.DeleteAsync(ParticipantCacheKey(oldSourceId));
+            await _cacheHelper.GetOrSetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), () => newIdentity);
         }
 
         /// <summary>
@@ -215,22 +215,28 @@ namespace EchoBot.Bot
             return false;
         }
 
-        private void SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
+        private string ParticipantCacheKey(string sourceId)
+        {
+            return $"{_threadId}-{sourceId}";
+        }
+
+        private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
             // filter the mediaStreams to see if the participant has a video send
             var audioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
             if (audioStream != null)
             {
-                _audioToIdentityMap.TryAdd(audioStream.SourceId, IdentityToParticipant(participant.Resource.Info.Identity.User, audioStream.SourceId));
+                await _cacheHelper.GetOrSetAsync(ParticipantCacheKey(audioStream.SourceId), TimeSpan.FromHours(2),
+                    () => IdentityToParticipant(participant.Resource.Info.Identity.User, audioStream.SourceId)).ForgetAndLogExceptionAsync(GraphLogger);
             }
         }
 
-        private void UnsubscribeFromParticipantAudio(IParticipant participant)
+        private async Task UnsubscribeFromParticipantAudio(IParticipant participant)
         {
             var audioStream = participant.Resource.MediaStreams!.Where(x => x.MediaType == Modality.Audio).FirstOrDefault();
             if (audioStream != null)
             {
-                _audioToIdentityMap.TryRemove(audioStream.SourceId!, out _);
+                await _cacheHelper.DeleteAsync(ParticipantCacheKey(audioStream.SourceId)).ForgetAndLogExceptionAsync(GraphLogger);
             }
         }
 
