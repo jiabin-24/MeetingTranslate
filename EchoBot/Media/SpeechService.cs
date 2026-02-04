@@ -191,7 +191,7 @@ namespace EchoBot.Media
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                 _logger.LogDebug($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
 
-                _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
+                await BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
             }
         }
 
