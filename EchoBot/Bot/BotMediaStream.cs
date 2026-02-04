@@ -6,6 +6,7 @@ using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
+using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 
@@ -187,21 +188,29 @@ namespace EchoBot.Bot
             {
                 if (!startVideoPlayerCompleted.Task.IsCompleted) { return; }
 
-                if (e.Buffer.UnmixedAudioBuffers == null)
+                if (e.Buffer == null)
                     return;
 
-                var tasks = e.Buffer.UnmixedAudioBuffers.Select(buffer =>
-                {
-                    var data = new byte[buffer.Length];
-                    Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
+                //var data = new byte[e.Buffer.Length];
+                //Marshal.Copy(e.Buffer.Data, data, 0, (int)e.Buffer.Length);
 
-                    var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
-                    // send audio buffer to language service for processing
-                    return _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
-                }).ToArray();
+                //var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
+                // send audio buffer to language service for processing
+                var speakerId=e.Buffer.ActiveSpeakers.Any()? e.Buffer.ActiveSpeakers[0].ToString() : null;
+                await _languageService.AppendAudioBuffer(e.Buffer, speakerId);
 
-                if (tasks.Length > 0)
-                    await Task.WhenAll(tasks).ConfigureAwait(false);
+                //var tasks = e.Buffer.UnmixedAudioBuffers.Select(buffer =>
+                //{
+                //    var data = new byte[buffer.Length];
+                //    Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
+
+                //    var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
+                //    // send audio buffer to language service for processing
+                //    return _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
+                //}).ToArray();
+
+                //if (tasks.Length > 0)
+                //    await Task.WhenAll(tasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

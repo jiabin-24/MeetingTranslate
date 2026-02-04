@@ -235,7 +235,7 @@ namespace EchoBot.Bot
                         StreamDirections = StreamDirection.Sendrecv,
                         // Note! Currently, the only audio format supported when receiving unmixed audio is Pcm16K
                         SupportedAudioFormat = AudioFormat.Pcm16K,
-                        ReceiveUnmixedMeetingAudio = true //get the extra buffers for the speakers
+                        ReceiveUnmixedMeetingAudio = false //get the extra buffers for the speakers
                     },
                     new VideoSocketSettings
                     {

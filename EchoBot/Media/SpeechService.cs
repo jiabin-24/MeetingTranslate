@@ -162,6 +162,7 @@ namespace EchoBot.Media
             var a1 = sent_audio_ticks;
             var a2 =  sent_audio_ticks- (long)e.Offset;
             var a3 = a2 / 1_000_000;
+            _logger.LogWarning($"Time: {a3}");
 
             try
             {
@@ -199,6 +200,7 @@ namespace EchoBot.Media
         {
             if (sender == null) return;
             //if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+            
             var speakerId = _currentSpeakerId;
 
             if (e.Result.Reason == ResultReason.RecognizedSpeech)
@@ -246,7 +248,8 @@ namespace EchoBot.Media
                         _firstTick = audioBuffer.Timestamp;
 
                     sent_audio_ticks = audioBuffer.Timestamp - _firstTick;
-                    _currentSpeakerId = speakerId;
+                    if (speakerId != null)
+                        _currentSpeakerId = speakerId;
                     _audioInputStream.Write(buffer);
                 }
             }
