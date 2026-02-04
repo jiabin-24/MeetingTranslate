@@ -6,9 +6,6 @@ using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
-using System;
-using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 
 namespace EchoBot.Bot
 {
@@ -191,26 +188,8 @@ namespace EchoBot.Bot
                 if (e.Buffer == null)
                     return;
 
-                //var data = new byte[e.Buffer.Length];
-                //Marshal.Copy(e.Buffer.Data, data, 0, (int)e.Buffer.Length);
-
-                //var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
-                // send audio buffer to language service for processing
-                var speakerId=e.Buffer.ActiveSpeakers.Any()? e.Buffer.ActiveSpeakers[0].ToString() : null;
+                var speakerId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
                 await _languageService.AppendAudioBuffer(e.Buffer, speakerId);
-
-                //var tasks = e.Buffer.UnmixedAudioBuffers.Select(buffer =>
-                //{
-                //    var data = new byte[buffer.Length];
-                //    Marshal.Copy(buffer.Data, data, 0, (int)buffer.Length);
-
-                //    var audioBuffer = Util.Utilities.CreateAudioMediaBuffer(data, e.Buffer.Timestamp, _logger);
-                //    // send audio buffer to language service for processing
-                //    return _languageService.AppendAudioBuffer(audioBuffer, buffer.ActiveSpeakerId.ToString());
-                //}).ToArray();
-
-                //if (tasks.Length > 0)
-                //    await Task.WhenAll(tasks).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

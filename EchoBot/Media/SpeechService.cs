@@ -37,17 +37,13 @@ namespace EchoBot.Media
         // Mapping between audio socket Id and participant Id.
         private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
 
+        private int _readFromInstanceTimes = 0;
+
         private int _placeHolderIndex;
 
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
-        private const int MinIntervalMs = 300;
-
-        private static readonly ConcurrentDictionary<long, string> _audioIdByOffset = new();
-
-        private static long sent_audio_ticks = 0;
-
-        private static long _firstTick = 0;
+        private const int MinIntervalMs = 500;
 
         private string _currentSpeakerId = string.Empty;
 
@@ -69,11 +65,6 @@ namespace EchoBot.Media
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private SpeechRecognizer _recognizer;
 
-        //private readonly ConcurrentDictionary<string, PushAudioInputStream> _streamBySpeaker = new();
-        //private readonly ConcurrentDictionary<string, SpeechRecognizer> _recognizerBySpeaker = new();
-        //private readonly ConcurrentDictionary<SpeechRecognizer, string> _speakerByRecognizer = new();
-        private readonly AutoDetectSourceLanguageConfig _autoDetect;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
         /// </summary>
@@ -88,15 +79,10 @@ namespace EchoBot.Media
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _threadId = threadId ?? string.Empty;
 
-            // prepare auto-detect config for recognizers
-            var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
-                : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
-            _autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
-
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "150"); // 让断句更短
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
+            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "250"); // 让断句更短
+            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
             _speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
@@ -112,10 +98,13 @@ namespace EchoBot.Media
 
         private async Task CreateRecognizerForSpeaker()
         {
-            // create a dedicated push stream for this speaker
-            //var stream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
+            // prepare auto-detect config for recognizers
+            var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
+                : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
+            var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
+
             var audioConfig = AudioConfig.FromStreamInput(_audioInputStream);
-            _recognizer = new SpeechRecognizer(_speechConfig, _autoDetect, audioConfig);
+            _recognizer = new SpeechRecognizer(_speechConfig, autoDetect, audioConfig);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
@@ -152,17 +141,9 @@ namespace EchoBot.Media
 
         private async Task Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
-            //if (sender == null) return;
-            //if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
-
             var speakerId = _currentSpeakerId;
-
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
             _logger.LogDebug($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
-            var a1 = sent_audio_ticks;
-            var a2 =  sent_audio_ticks- (long)e.Offset;
-            var a3 = a2 / 1_000_000;
-            _logger.LogWarning($"Time: {a3}");
 
             try
             {
@@ -199,7 +180,6 @@ namespace EchoBot.Media
         private async Task Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
             if (sender == null) return;
-            //if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
             
             var speakerId = _currentSpeakerId;
 
@@ -208,18 +188,10 @@ namespace EchoBot.Media
                 var original = e.Result.Text;
                 if (string.IsNullOrEmpty(original)) return;
 
-                var a3 = sent_audio_ticks;
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                 _logger.LogDebug($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
 
-                try
-                {
-                    await BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError($"Translate failed: {ex.Message}");
-                }
+                _ = BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
             }
         }
 
@@ -244,12 +216,9 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    if (_firstTick == 0)
-                        _firstTick = audioBuffer.Timestamp;
-
-                    sent_audio_ticks = audioBuffer.Timestamp - _firstTick;
                     if (speakerId != null)
                         _currentSpeakerId = speakerId;
+
                     _audioInputStream.Write(buffer);
                 }
             }
@@ -272,35 +241,6 @@ namespace EchoBot.Media
         /// <returns>Task.</returns>
         public async Task ShutDownAsync()
         {
-            //if (!_isRunning)
-            //{
-            //    return;
-            //}
-
-            //if (_isRunning)
-            //{
-            //    // stop and dispose any per-speaker recognizers
-            //    foreach (var kv in _recognizerBySpeaker)
-            //    {
-            //        try { kv.Value.StopContinuousRecognitionAsync().Wait(1000); } catch { }
-            //        try { kv.Value.Dispose(); } catch { }
-            //    }
-            //    _recognizerBySpeaker.Clear();
-
-            //    // close per-speaker push streams
-            //    foreach (var kv in _streamBySpeaker)
-            //    {
-            //        try { kv.Value.Close(); } catch { }
-            //        try { kv.Value.Dispose(); } catch { }
-            //    }
-            //    _streamBySpeaker.Clear();
-
-            //    _audioOutputStream.Dispose();
-            //    _synthesizer.Dispose();
-
-            //    _isRunning = false;
-            //}
-
             if (!_isRunning)
             {
                 return;
@@ -380,20 +320,27 @@ namespace EchoBot.Media
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
         {
-            var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
+            try
+            {
+                var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
 
-            await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
+                await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Translate failed: {ex.Message}");
+            }
         }
 
         private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration,
             string sourceLang, string sourceText, string audioId)
         {
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks，offset 是针对 Speech Regonizer 识别的时差（不能用于多 Regonizer 的线性排序）
+            long endMs = startMs + (long)duration.TotalMilliseconds;
             long realStartMs = (DateTime.UtcNow - DateTime.UnixEpoch).Ticks / 10_000;
-            long endMs = realStartMs + (long)duration.TotalMilliseconds;
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
             var speaker = await GetParticipant(audioId);
@@ -410,28 +357,42 @@ namespace EchoBot.Media
                 RealStartMs: realStartMs
             );
 
-            // send the transcript to the websocket clients
-            await _wsPublisher.PublishCaptionAsync(payload);
+            try
+            {
+                // send the transcript to the websocket clients
+                await _wsPublisher.PublishCaptionAsync(payload);
 
-            if (!isFinal)
-                return;
+                if (!isFinal)
+                    return;
 
-            var listKey = $"list:{_threadId}";
-            await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
-            await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
+                var listKey = $"list:{_threadId}";
+                await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
+                await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 
-            // For each available caption (language -> text), synthesize speech and publish in parallel
-            await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+                // For each available caption (language -> text), synthesize speech and publish in parallel
+                await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Transcript and send error");
+            }
         }
 
         private async Task<Models.Participant> GetParticipant(string audioId)
         {
             // determine speaker label from active speakers if available
+            if (_readFromInstanceTimes++ > 50)
+            {
+                _audioToIdentityMap.Clear();
+                _readFromInstanceTimes = 0;
+            }
+
             _audioToIdentityMap.TryGetValue(audioId, out var speaker);
             speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{_threadId}-{audioId}");
             if (speaker != null)
                 _audioToIdentityMap[audioId] = speaker;
             speaker ??= new Models.Participant { DisplayName = $"Speaker-{audioId}" };
+
             return speaker;
         }
 
