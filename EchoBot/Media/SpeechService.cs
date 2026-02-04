@@ -39,6 +39,18 @@ namespace EchoBot.Media
 
         private int _placeHolderIndex;
 
+        // 每个流（key）上次发送的时间戳（毫秒）
+        private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
+        private const int MinIntervalMs = 300;
+
+        private static readonly ConcurrentDictionary<long, string> _audioIdByOffset = new();
+
+        private static long sent_audio_ticks = 0;
+
+        private static long _firstTick = 0;
+
+        private string _currentSpeakerId = string.Empty;
+
         /// <summary>
         /// The logger
         /// </summary>
@@ -54,9 +66,12 @@ namespace EchoBot.Media
         private readonly IConnectionMultiplexer _mux;
         private readonly string _threadId;
         // per-speaker streams and recognizers
-        private readonly ConcurrentDictionary<string, PushAudioInputStream> _streamBySpeaker = new();
-        private readonly ConcurrentDictionary<string, SpeechRecognizer> _recognizerBySpeaker = new();
-        private readonly ConcurrentDictionary<SpeechRecognizer, string> _speakerByRecognizer = new();
+        private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
+        private SpeechRecognizer _recognizer;
+
+        //private readonly ConcurrentDictionary<string, PushAudioInputStream> _streamBySpeaker = new();
+        //private readonly ConcurrentDictionary<string, SpeechRecognizer> _recognizerBySpeaker = new();
+        //private readonly ConcurrentDictionary<SpeechRecognizer, string> _speakerByRecognizer = new();
         private readonly AutoDetectSourceLanguageConfig _autoDetect;
 
         /// <summary>
@@ -95,24 +110,19 @@ namespace EchoBot.Media
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 
-        private async Task CreateRecognizerForSpeaker(string speakerId)
+        private async Task CreateRecognizerForSpeaker()
         {
             // create a dedicated push stream for this speaker
-            var stream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
-            var audioConfig = AudioConfig.FromStreamInput(stream);
-            var recognizer = new SpeechRecognizer(_speechConfig, _autoDetect, audioConfig);
-
-            // store mappings
-            _streamBySpeaker[speakerId] = stream;
-            _recognizerBySpeaker[speakerId] = recognizer;
-            _speakerByRecognizer[recognizer] = speakerId;
+            //var stream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
+            var audioConfig = AudioConfig.FromStreamInput(_audioInputStream);
+            _recognizer = new SpeechRecognizer(_speechConfig, _autoDetect, audioConfig);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
             // wire events
-            recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as SpeechRecognizer, e);
-            recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as SpeechRecognizer, e);
-            recognizer.Canceled += (s, e) =>
+            _recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as SpeechRecognizer, e);
+            _recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as SpeechRecognizer, e);
+            _recognizer.Canceled += (s, e) =>
             {
                 _logger.LogWarning($"CANCELED: Reason={e.Reason}");
                 if (e.Reason == CancellationReason.Error)
@@ -123,33 +133,43 @@ namespace EchoBot.Media
                 }
                 stopRecognition.TrySetResult(0);
             };
-            recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
-            recognizer.SessionStopped += (s, e) =>
+            _recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
+            _recognizer.SessionStopped += (s, e) =>
             {
                 _logger.LogInformation("Session stopped event.\r\nStop recognition.");
                 stopRecognition.TrySetResult(0);
             };
 
             // start continuous recognition
-            await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
+            await _recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
             Task.WaitAny([stopRecognition.Task]);
 
             // Stops recognition.
-            await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+            await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+
+            _isDraining = false;
         }
 
         private async Task Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
-            if (sender == null) return;
-            if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+            //if (sender == null) return;
+            //if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+
+            var speakerId = _currentSpeakerId;
 
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
             _logger.LogDebug($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
+            var a1 = sent_audio_ticks;
+            var a2 =  sent_audio_ticks- (long)e.Offset;
+            var a3 = a2 / 1_000_000;
 
             try
             {
                 var partialText = e.Result.Text;
                 if (string.IsNullOrWhiteSpace(partialText))
+                    return;
+
+                if (!ShouldSend(speakerId))
                     return;
 
                 var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
@@ -161,16 +181,32 @@ namespace EchoBot.Media
             }
         }
 
+        // 是否可发送（满足时间窗口）
+        private static bool ShouldSend(string key)
+        {
+            var now = Environment.TickCount64; // 单调递增毫秒
+            var last = _lastSentAtMs.GetOrAdd(key, 0L);
+
+            // 未达到间隔：不发送
+            if (now - last < MinIntervalMs) return false;
+
+            // 达到/超过间隔：更新并允许发送
+            _lastSentAtMs[key] = now;
+            return true;
+        }
+
         private async Task Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
             if (sender == null) return;
-            if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+            //if (!_speakerByRecognizer.TryGetValue(sender, out var speakerId)) speakerId = "";
+            var speakerId = _currentSpeakerId;
 
             if (e.Result.Reason == ResultReason.RecognizedSpeech)
             {
                 var original = e.Result.Text;
                 if (string.IsNullOrEmpty(original)) return;
 
+                var a3 = sent_audio_ticks;
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
                 _logger.LogDebug($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
 
@@ -192,7 +228,11 @@ namespace EchoBot.Media
         /// <param name="speakerId">Optional explicit speaker id to route to.</param>
         public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
-            if (!_isRunning) { Start(); }
+            if (!_isRunning)
+            { 
+                Start(); 
+                await CreateRecognizerForSpeaker(); 
+            }
 
             try
             {
@@ -202,11 +242,12 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    if (!_streamBySpeaker.ContainsKey(speakerId))
-                        await CreateRecognizerForSpeaker(speakerId);
+                    if (_firstTick == 0)
+                        _firstTick = audioBuffer.Timestamp;
 
-                    if (_streamBySpeaker.TryGetValue(speakerId, out var pushStream))
-                        pushStream.Write(buffer);
+                    sent_audio_ticks = audioBuffer.Timestamp - _firstTick;
+                    _currentSpeakerId = speakerId;
+                    _audioInputStream.Write(buffer);
                 }
             }
             catch (Exception e)
@@ -228,6 +269,35 @@ namespace EchoBot.Media
         /// <returns>Task.</returns>
         public async Task ShutDownAsync()
         {
+            //if (!_isRunning)
+            //{
+            //    return;
+            //}
+
+            //if (_isRunning)
+            //{
+            //    // stop and dispose any per-speaker recognizers
+            //    foreach (var kv in _recognizerBySpeaker)
+            //    {
+            //        try { kv.Value.StopContinuousRecognitionAsync().Wait(1000); } catch { }
+            //        try { kv.Value.Dispose(); } catch { }
+            //    }
+            //    _recognizerBySpeaker.Clear();
+
+            //    // close per-speaker push streams
+            //    foreach (var kv in _streamBySpeaker)
+            //    {
+            //        try { kv.Value.Close(); } catch { }
+            //        try { kv.Value.Dispose(); } catch { }
+            //    }
+            //    _streamBySpeaker.Clear();
+
+            //    _audioOutputStream.Dispose();
+            //    _synthesizer.Dispose();
+
+            //    _isRunning = false;
+            //}
+
             if (!_isRunning)
             {
                 return;
@@ -235,22 +305,11 @@ namespace EchoBot.Media
 
             if (_isRunning)
             {
-                // stop and dispose any per-speaker recognizers
-                foreach (var kv in _recognizerBySpeaker)
-                {
-                    try { kv.Value.StopContinuousRecognitionAsync().Wait(1000); } catch { }
-                    try { kv.Value.Dispose(); } catch { }
-                }
-                _recognizerBySpeaker.Clear();
+                await _recognizer.StopContinuousRecognitionAsync();
+                _recognizer.Dispose();
+                _audioInputStream.Close();
 
-                // close per-speaker push streams
-                foreach (var kv in _streamBySpeaker)
-                {
-                    try { kv.Value.Close(); } catch { }
-                    try { kv.Value.Dispose(); } catch { }
-                }
-                _streamBySpeaker.Clear();
-
+                _audioInputStream.Dispose();
                 _audioOutputStream.Dispose();
                 _synthesizer.Dispose();
 
