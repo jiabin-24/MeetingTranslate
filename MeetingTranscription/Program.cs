@@ -151,7 +151,7 @@ static class Program
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
         else
-            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new ClientSecretCredential(tenantId, AadAppId, AadAppSecret));
+            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential());
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
