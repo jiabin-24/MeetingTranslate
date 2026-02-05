@@ -140,6 +140,9 @@ static class Program
 
     private static void BuildConfig(WebApplicationBuilder builder)
     {
+        // Add Environment Variables
+        builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
+
         var AadAppId = builder.Configuration.GetValue<string>("AppSettings:AadAppId");
         var AadAppSecret = builder.Configuration.GetValue<string>("AppSettings:AadAppSecret");
         var tenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId");
@@ -149,9 +152,6 @@ static class Program
             builder.Configuration.AddDotNetEnv();
         else
             builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new ClientSecretCredential(tenantId, AadAppId, AadAppSecret));
-
-        // Add Environment Variables
-        builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
