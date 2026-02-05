@@ -137,21 +137,18 @@ static class Program
 
         app.Run();
     }
-    
+
     private static void BuildConfig(WebApplicationBuilder builder)
     {
+        var AadAppId = builder.Configuration.GetValue<string>("AppSettings:AadAppId");
+        var AadAppSecret = builder.Configuration.GetValue<string>("AppSettings:AadAppSecret");
+        var tenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId");
+
         // Load the configuration from the .env file in development environment
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
         else
-        {
-            var credentialOption = new DefaultAzureCredentialOptions
-            {
-                TenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId"),
-                ExcludeVisualStudioCredential = true
-            };
-            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential(credentialOption));
-        }
+            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new ClientSecretCredential(tenantId, AadAppId, AadAppSecret));
 
         // Add Environment Variables
         builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");
@@ -159,9 +156,9 @@ static class Program
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
         {
-            botOptions.MicrosoftAppId = configuration.GetValue<string>("AppSettings:AadAppId");
-            botOptions.MicrosoftAppPassword = configuration.GetValue<string>("AppSettings:AadAppSecret");
-            botOptions.MicrosoftAppTenantId = configuration.GetValue<string>("MicrosoftAppTenantId");
+            botOptions.MicrosoftAppId = AadAppId;
+            botOptions.MicrosoftAppPassword = AadAppSecret;
+            botOptions.MicrosoftAppTenantId = tenantId;
             botOptions.AppBaseUrl = configuration.GetValue<string>("AppBaseUrl");
             botOptions.UserId = configuration.GetValue<string>("UserId");
             botOptions.GraphApiEndpoint = configuration.GetValue<string>("GraphApiEndpoint");
