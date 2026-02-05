@@ -147,7 +147,8 @@ static class Program
         {
             var credentialOption = new DefaultAzureCredentialOptions
             {
-                TenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId")
+                TenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId"),
+                ExcludeVisualStudioCredential = true
             };
             builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential(credentialOption));
         }
