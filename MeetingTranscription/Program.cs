@@ -137,14 +137,20 @@ static class Program
 
         app.Run();
     }
-
+    
     private static void BuildConfig(WebApplicationBuilder builder)
     {
         // Load the configuration from the .env file in development environment
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
         else
-            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential());
+        {
+            var credentialOption = new DefaultAzureCredentialOptions
+            {
+                TenantId = builder.Configuration.GetValue<string>("MicrosoftAppTenantId")
+            };
+            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential(credentialOption));
+        }
 
         // Add Environment Variables
         builder.Configuration.AddEnvironmentVariables(prefix: "AppSettings__");

@@ -81,7 +81,7 @@ namespace EchoBot.Media
 
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "250"); // 让断句更短
+            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "150"); // 让断句更短
             //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
             _speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
