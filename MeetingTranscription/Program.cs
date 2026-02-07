@@ -2,6 +2,7 @@
 using DotNetEnv.Configuration;
 using EchoBot;
 using EchoBot.Util;
+using EchoBot.WebRTC;
 using EchoBot.WebSocket;
 using MeetingTranscription;
 using MeetingTranscription.Bots;
@@ -65,7 +66,11 @@ static class Program
             builder.Services.AddSingleton<CaptionHub>(); // Keep original in-process WebSocket hub
 
         // Register publisher implementation based on the mode
-        builder.Services.AddSingleton<ICaptionPublisher>(sp => EchoBot.WebSocket.CaptionPublisher.CreateInstance(!string.IsNullOrEmpty(signalrConn)));
+        builder.Services.AddSingleton<ICaptionPublisher>(sp => CaptionPublisher.CreateInstance(!string.IsNullOrEmpty(signalrConn)));
+
+        // WebRCT services
+        builder.Services.AddSingleton<OpusBroadcaster>();
+        builder.Services.AddSingleton<RtcSessionManager>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
@@ -98,7 +103,6 @@ static class Program
         });
 
         var app = builder.Build();
-
         if (app.Environment.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -117,11 +121,14 @@ static class Program
             name: "default",
             pattern: "{controller=Home}/{action=Index}/{id?}");
 
+            endpoints.MapHub<RtcHub>("/rtc"); // WebRTC signaling hub
+
             if (!string.IsNullOrEmpty(signalrConn))
                 endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
             else
                 endpoints.Map("/captionHub", async ctx => await ctx.RequestServices.GetRequiredService<CaptionHub>().HandleAsync(ctx)); // WebSocket hub for captions
         });
+
         app.UseBotServices();
         app.UseSpaStaticFiles();
         app.UseSpa(spa =>

@@ -25,5 +25,8 @@
 		<PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.15690" />
 		<PackageReference Include="Microsoft.Skype.Bots.Media" Version="1.31.0.225-preview" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
+		<PackageReference Include="Concentus" Version="2.2.2" />
+		<PackageReference Include="SIPSorcery" Version="6.*" />
+		<PackageReference Include="SIPSorceryMedia.Encoders" Version="6.*" />
 	</ItemGroup>
 </Project>

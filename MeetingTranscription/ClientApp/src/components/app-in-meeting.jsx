@@ -7,7 +7,7 @@ import CaptionsPanel from "./captionsPanel";
 const AppInMeeting = props => {
     const [meetingId, setMeetingId] = useState(null);
     const [currentUser, setCurrentUser] = useState(null);
-
+    
     useEffect(() => {
         microsoftTeams.app.initialize().then(() => {
             microsoftTeams.app.getContext().then((context) => {

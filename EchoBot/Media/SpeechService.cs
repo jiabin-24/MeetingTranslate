@@ -1,5 +1,6 @@
 ﻿using EchoBot.Translator;
 using EchoBot.Util;
+using EchoBot.WebRTC;
 using EchoBot.WebSocket;
 using MeetingTranscription.Models.Configuration;
 using Microsoft.CognitiveServices.Speech;
@@ -10,6 +11,7 @@ using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
 using Sprache;
 using StackExchange.Redis;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
@@ -44,6 +46,8 @@ namespace EchoBot.Media
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
         private const int MinIntervalMs = 500;
+        private const int FrameBytes = 960 * 2; // 20ms @ 48kHz mono 16-bit
+        private ArrayBufferWriter<byte> _ttsBufferWriter = new ArrayBufferWriter<byte>(FrameBytes * 4);
 
         private string _currentSpeakerId = string.Empty;
 
@@ -58,6 +62,7 @@ namespace EchoBot.Media
         private readonly SpeechConfig _speechConfig;
         private readonly SpeechSynthesizer _synthesizer;
         private readonly ICaptionPublisher _wsPublisher;
+        private readonly RtcSessionManager _rtcSessionManager;
         private readonly ITranslatorClient _translatorClient;
         private readonly IConnectionMultiplexer _mux;
         private readonly string _threadId;
@@ -72,8 +77,8 @@ namespace EchoBot.Media
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
-            // Use WAV PCM output so Bot media buffers can be created from the stream
-            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm);
+            // Use raw PCM output for better compatibility with WebRTC and lower latency (no need for additional decoding)
+            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw48Khz16BitMonoPcm);
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
@@ -90,10 +95,13 @@ namespace EchoBot.Media
             _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "false"); // 始终使用增强模型
             _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
 
-            _synthesizer = new SpeechSynthesizer(_speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _wsPublisher = ServiceLocator.GetRequiredService<ICaptionPublisher>();
+            _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
+
+            _synthesizer = new SpeechSynthesizer(_speechConfig);
+            _synthesizer.Synthesizing += OnSynthesizing;
         }
 
         private async Task CreateRecognizerForSpeaker()
@@ -151,7 +159,7 @@ namespace EchoBot.Media
                 if (string.IsNullOrWhiteSpace(partialText))
                     return;
 
-                if (!ShouldSend(speakerId))
+                if (!ShouldSend(speakerId, MinIntervalMs))
                     return;
 
                 var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
@@ -164,13 +172,13 @@ namespace EchoBot.Media
         }
 
         // 是否可发送（满足时间窗口）
-        private static bool ShouldSend(string key)
+        private static bool ShouldSend(string key, int minIntervalMs)
         {
             var now = Environment.TickCount64; // 单调递增毫秒
             var last = _lastSentAtMs.GetOrAdd(key, 0L);
 
             // 未达到间隔：不发送
-            if (now - last < MinIntervalMs) return false;
+            if (now - last < minIntervalMs) return false;
 
             // 达到/超过间隔：更新并允许发送
             _lastSentAtMs[key] = now;
@@ -180,7 +188,7 @@ namespace EchoBot.Media
         private async Task Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
         {
             if (sender == null) return;
-            
+
             var speakerId = _currentSpeakerId;
 
             if (e.Result.Reason == ResultReason.RecognizedSpeech)
@@ -203,9 +211,9 @@ namespace EchoBot.Media
         public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
             if (!_isRunning)
-            { 
-                Start(); 
-                await CreateRecognizerForSpeaker(); 
+            {
+                Start();
+                await CreateRecognizerForSpeaker();
             }
 
             try
@@ -271,51 +279,30 @@ namespace EchoBot.Media
             }
         }
 
+        private void OnSynthesizing(Object? s, SpeechSynthesisEventArgs e)
+        {
+            // 文本转语音
+            if (e?.Result?.AudioData == null || e.Result.AudioData.Length == 0) return;
+
+            _ttsBufferWriter.Write(e.Result.AudioData);
+
+            while (_ttsBufferWriter.WrittenCount >= FrameBytes)
+            {
+                var span = _ttsBufferWriter.WrittenSpan.Slice(0, FrameBytes).ToArray();
+                _rtcSessionManager.PushPcmToAll(span);
+                // shift buffer
+                var remaining = _ttsBufferWriter.WrittenCount - FrameBytes;
+                var tmp = _ttsBufferWriter.WrittenSpan.Slice(FrameBytes, remaining).ToArray();
+                _ttsBufferWriter = new ArrayBufferWriter<byte>(Math.Max(FrameBytes * 4, remaining * 2));
+                _ttsBufferWriter.Write(tmp);
+            }
+        }
+
         private async Task TextToSpeech(string text, string lang, string speakerId)
         {
-            // convert the text to speech
-            SpeechSynthesisResult result = await _synthesizer.SpeakTextAsync(text);
-            // take the stream of the result
-            // create 20ms media buffers of the stream and send to the AudioSocket in the BotMediaStream
-            using (var stream = AudioDataStream.FromResult(result))
-            {
-                try
-                {
-                    byte[] audioBytes;
-
-                    if (result.AudioData != null && result.AudioData.Length > 0)
-                        audioBytes = result.AudioData;
-                    else
-                    {
-                        // Read full audio bytes from stream
-                        stream.SetPosition(0);
-                        using var ms = new MemoryStream();
-                        var buffer = new byte[8192];
-                        uint read;
-                        while ((read = stream.ReadData(buffer)) > 0)
-                        {
-                            ms.Write(buffer, 0, (int)read);
-                        }
-                        audioBytes = ms.ToArray();
-                    }
-
-                    // Create bot media buffers from the WAV bytes
-                    // compute header hex for debugging
-                    var headerHex = string.Empty;
-                    if (audioBytes.Length >= 12)
-                        headerHex = string.Join(' ', audioBytes.Take(12).Select(b => b.ToString("x2")));
-
-                    // content type is WAV PCM
-                    var contentType = "audio/wav";
-                    var audioId = Guid.NewGuid().ToString();
-                    // publish to connected websocket clients (include length and header sample)
-                    await _wsPublisher.PublishAudioAsync(_threadId, audioId, audioBytes, speakerId, lang, contentType, audioBytes.Length, headerHex);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to TextToSpeech");
-                }
-            }
+            if (lang.StartsWith("en"))
+                return;
+            await _synthesizer.SpeakTextAsync(text);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)

@@ -1,16 +1,19 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
+import * as signalR from '@microsoft/signalr';
+import { API_BASE } from '../config/apiBase';
 
 export default function CaptionsPanel(props) {
 
     const { url, meetingId, targetLang, currentUser } = props;
     const { lines, unlockAudio, stopAudio } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
     const containerRef = useRef(null);
+    const audioRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-    // viewMode: 'both' | 'original' | 'translated'
-    const [viewMode, setViewMode] = useState('both');
+    const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
     const [audioStatus, setAudioStatus] = useState('idle'); // 'idle'|'queued'|'playing'
+    const pcRef = useRef(null);
 
     useEffect(() => {
         const handler = (ev) => {
@@ -38,17 +41,14 @@ export default function CaptionsPanel(props) {
         return () => el.removeEventListener('scroll', onScroll);
     }, []);
 
-    // Scroll to bottom whenever the lines array changes (including partial updates)
-    // and auto-scroll is enabled. useLayoutEffect ensures we measure/adjust
-    // scroll before the browser paints the updated content to avoid visual
-    // jumpiness.
+    // Scroll to bottom whenever the lines array changes (including partial updates) and auto-scroll is enabled. useLayoutEffect ensures we measure/adjust
+    // scroll before the browser paints the updated content to avoid visual jumpiness.
     useLayoutEffect(() => {
         if (!autoScrollEnabled) return;
         const el = containerRef.current;
         if (!el) return;
 
-        // Use smooth scrolling so newly-added final captions animate into view
-        // in a visually gentle way. Fall back to instant if smooth not supported.
+        // Use smooth scrolling so newly-added final captions animate into view in a visually gentle way. Fall back to instant if smooth not supported.
         requestAnimationFrame(() => {
             try {
                 if (typeof el.scrollTo === 'function') {
@@ -64,6 +64,52 @@ export default function CaptionsPanel(props) {
         });
     }, [lines, autoScrollEnabled]);
 
+    const connectRtc = async () => {
+        const hub = new signalR.HubConnectionBuilder().withUrl(`${API_BASE}/rtc`).build();
+        await hub.start();
+
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' } // stun:stun.cloudflare.com
+            ]
+        });
+
+        pcRef.current = pc;
+
+        // Create a data channel before creating the offer so the resulting m-line ordering (application/datachannel vs audio) matches the server-side SIPSorcery answer
+        try { pc.createDataChannel('sips'); } catch (e) { /* no-op */ }
+
+        pc.ontrack = async (e) => {
+            try {
+                const audioEl = audioRef.current || document.getElementById('player');
+                if (audioEl) {
+                    audioEl.srcObject = e.streams[0];
+                    // Attempt to play immediately. Browsers require a user gesture to allow audio autoplay;
+                    // the toggle button provides that gesture. Still, call play and ignore failures.
+                    try { await audioEl.play(); } catch (_) { /* autoplay blocked until user interaction */ }
+                }
+            } catch (_) { }
+        };
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+
+        pc.onicecandidate = async (e) => {
+            if (e.candidate) await hub.invoke('Ice', e.candidate.candidate);
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const answerSdp = await hub.invoke('Offer', offer.sdp);
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    }
+
+    const closeRtc = async () => {
+        try {
+            await pcRef.current?.close();
+        } catch (_) { }
+        pcRef.current = null;
+    }
+
+    //connectRtc();
 
     return (
         <div>
@@ -75,15 +121,19 @@ export default function CaptionsPanel(props) {
                 </div>
 
                 <div className="audio-toggle">
+                    <audio id="player" ref={audioRef} autoPlay playsInline></audio>
                     <button
                         className={`icon-button ${audioEnabled ? 'audio-enabled' : 'audio-disabled'}`}
-                        onClick={() => {
+                        onClick={async () => {
                             try {
                                 if (!audioEnabled) {
-                                    unlockAudio();
+                                    // Ensure any user-gesture unlocking happens before creating the RTC connection
+                                    try { await unlockAudio(); } catch (_) { }
+                                    await connectRtc();
                                     setAudioEnabled(true);
                                 } else {
-                                    stopAudio();
+                                    await closeRtc();
+                                    try { await stopAudio(); } catch (_) { }
                                     setAudioEnabled(false);
                                 }
                             } catch (e) {
@@ -125,7 +175,7 @@ export default function CaptionsPanel(props) {
                         <div
                             key={`${l.startMs}-${l.endMs}-${i}`}
                             data-start-ms={l.realStartMs}
-                            data-speakerId={l.speakerId}
+                            data-speaker-id={l.speakerId}
                             className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
                             <div className="caption-speaker">[{speaker}]</div>
