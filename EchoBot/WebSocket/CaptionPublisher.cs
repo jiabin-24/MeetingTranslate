@@ -7,8 +7,6 @@ namespace EchoBot.WebSocket
     public interface ICaptionPublisher
     {
         Task PublishCaptionAsync(CaptionPayload payload);
-
-        Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex);
     }
 
     public class CaptionPublisher : ICaptionPublisher
@@ -53,23 +51,6 @@ namespace EchoBot.WebSocket
             {
                 await _wsHub.BroadcastAsync(payload);
             }
-        }
-
-        public Task PublishAudioAsync(string meetingId, string audioId, byte[] audio, string speakerId, string lang, string contentType, int length, string headerHex)
-        {
-            if (_sigHub != null)
-            {
-                var meta = new { type = "audio", meetingId, audioId, speakerId, lang, contentType, length, headerHex, isFinal = true };
-                // Send audio only to clients subscribed to the specific target language group for this meeting
-                return _sigHub.Clients.Group($"{meetingId}:{lang}").SendCoreAsync("audio", new object?[] { meta, audio }, default);
-            }
-
-            if (_wsHub != null)
-            {
-                return _wsHub.BroadcastAudioAsync(meetingId, audioId, audio, speakerId, lang, contentType, length, headerHex);
-            }
-
-            return Task.CompletedTask;
         }
     }
 }

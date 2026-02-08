@@ -22,7 +22,7 @@ namespace MeetingTranscription.Controllers
         public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string threadId)
         {
             var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{threadId}"))
-                .Select(v => JsonConvert.DeserializeObject<CaptionPayload>((string)v)).ToList();
+                .Select(v => JsonConvert.DeserializeObject<CaptionPayload>((string)v)).OrderByDescending(c => c.StartMs).Take(100).ToList();
             return captions;
         }
     }

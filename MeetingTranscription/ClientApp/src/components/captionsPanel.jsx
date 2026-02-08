@@ -6,23 +6,13 @@ import { API_BASE } from '../config/apiBase';
 export default function CaptionsPanel(props) {
 
     const { url, meetingId, targetLang, currentUser } = props;
-    const { lines, unlockAudio, stopAudio } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
+    const { lines } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
     const containerRef = useRef(null);
     const audioRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
-    const [audioStatus, setAudioStatus] = useState('idle'); // 'idle'|'queued'|'playing'
     const pcRef = useRef(null);
-
-    useEffect(() => {
-        const handler = (ev) => {
-            const s = ev && ev.detail && ev.detail.status ? ev.detail.status : 'idle';
-            setAudioStatus(s);
-        };
-        window.addEventListener('realtime-audio-status', handler);
-        return () => window.removeEventListener('realtime-audio-status', handler);
-    }, []);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -109,8 +99,6 @@ export default function CaptionsPanel(props) {
         pcRef.current = null;
     }
 
-    //connectRtc();
-
     return (
         <div>
             <div className="controls">
@@ -128,12 +116,10 @@ export default function CaptionsPanel(props) {
                             try {
                                 if (!audioEnabled) {
                                     // Ensure any user-gesture unlocking happens before creating the RTC connection
-                                    try { await unlockAudio(); } catch (_) { }
                                     await connectRtc();
                                     setAudioEnabled(true);
                                 } else {
                                     await closeRtc();
-                                    try { await stopAudio(); } catch (_) { }
                                     setAudioEnabled(false);
                                 }
                             } catch (e) {
