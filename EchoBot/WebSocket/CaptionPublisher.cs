@@ -12,20 +12,11 @@ namespace EchoBot.WebSocket
     public class CaptionPublisher : ICaptionPublisher
     {
         private readonly IHubContext<CaptionSignalRHub>? _sigHub;
-        private readonly CaptionHub? _wsHub;
 
-        public static CaptionPublisher CreateInstance(bool useSignalR)
+        public static CaptionPublisher CreateInstance()
         {
-            if (useSignalR)
-            {
-                var sigHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
-                return new CaptionPublisher(sigHub);
-            }
-            else
-            {
-                var ws = ServiceLocator.GetRequiredService<CaptionHub>();
-                return new CaptionPublisher(ws);
-            }
+            var sigHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
+            return new CaptionPublisher(sigHub);
         }
 
         // SignalR constructor
@@ -34,23 +25,9 @@ namespace EchoBot.WebSocket
             _sigHub = hub;
         }
 
-        // WebSocket constructor
-        private CaptionPublisher(CaptionHub wsHub)
-        {
-            _wsHub = wsHub;
-        }
-
         public async Task PublishCaptionAsync(CaptionPayload payload)
         {
-            if (_sigHub != null)
-            {
-                await _sigHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", new object?[] { payload }, default);
-            }
-
-            if (_wsHub != null)
-            {
-                await _wsHub.BroadcastAsync(payload);
-            }
+            await _sigHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", [payload], default);
         }
     }
 }

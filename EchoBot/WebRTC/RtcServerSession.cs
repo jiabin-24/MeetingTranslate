@@ -1,22 +1,40 @@
-﻿using SIPSorcery.Net;
+﻿using SIPSorcery.Media;
+using SIPSorcery.Net;
+using SIPSorceryMedia.Abstractions;
 
 namespace EchoBot.WebRTC
 {
     public class RtcServerSession : IDisposable
     {
-        private RTCPeerConnection _pc;
-        private uint _rtpTimestamp;
+        private readonly RTCPeerConnection _pc;
+
+        private readonly AudioExtrasSource _audioSource;
 
         public RtcServerSession()
         {
             _pc = new RTCPeerConnection(null);
 
-            _pc.onconnectionstatechange += (state) =>
+            _audioSource = new AudioExtrasSource(new AudioEncoder(false), new AudioSourceOptions
             {
-                if (state is RTCPeerConnectionState.disconnected or RTCPeerConnectionState.failed or RTCPeerConnectionState.closed)
-                {
-                    try { _pc.Close("normal"); } catch { }
-                }
+                AudioSource = AudioSourcesEnum.None,
+                MusicInputSamplingRate = AudioSamplingRatesEnum.Rate16KHz
+            });
+
+            _pc.OnAudioFormatsNegotiated += (fmts) => _audioSource.SetAudioSourceFormat(fmts.First());
+            _audioSource.OnAudioSourceEncodedSample += _pc.SendAudio;
+
+            // 把音源挂成发送轨（SendOnly）
+            var audioTrack = new MediaStreamTrack(_audioSource.GetAudioSourceFormats(), MediaStreamStatusEnum.SendOnly);
+            _pc.addTrack(audioTrack);
+
+            _pc.onconnectionstatechange += async (state) =>
+            {
+                if (state == RTCPeerConnectionState.failed)
+                    _pc.Close("ice disconnection");
+                else if (state == RTCPeerConnectionState.closed)
+                    await _audioSource.CloseAudio();
+                else if (state == RTCPeerConnectionState.connected)
+                    await _audioSource.StartAudio();
             };
         }
 
@@ -27,6 +45,7 @@ namespace EchoBot.WebRTC
             _pc.setLocalDescription(answer);
             var local = _pc.localDescription;
             if (local == null) return Task.FromResult(string.Empty);
+
             try
             {
                 return Task.FromResult(local.sdp.ToString() ?? local.ToString() ?? string.Empty);
@@ -43,13 +62,9 @@ namespace EchoBot.WebRTC
             return Task.CompletedTask;
         }
 
-        public void SendOpus(ReadOnlySpan<byte> opusFrame)
+        public async Task SendAudio(MemoryStream stream)
         {
-            // 48k mono @20ms -> 960 samples per packet
-            _rtpTimestamp += 960;
-
-            // SIPSorcery SendAudio typically takes (uint rtpTimestamp, byte[] payload)
-            _pc.SendAudio(_rtpTimestamp, opusFrame.ToArray());
+            await _audioSource.SendAudioFromStream(stream, AudioSamplingRatesEnum.Rate16KHz);
         }
 
         public void Dispose()

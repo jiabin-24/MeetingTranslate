@@ -13,6 +13,7 @@ export default function CaptionsPanel(props) {
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
     const pcRef = useRef(null);
+    const hubRef = useRef(null);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -57,6 +58,7 @@ export default function CaptionsPanel(props) {
     const connectRtc = async () => {
         const hub = new signalR.HubConnectionBuilder().withUrl(`${API_BASE}/rtc`).build();
         await hub.start();
+        hubRef.current = hub;
 
         const pc = new RTCPeerConnection({
             iceServers: [
@@ -97,6 +99,13 @@ export default function CaptionsPanel(props) {
             await pcRef.current?.close();
         } catch (_) { }
         pcRef.current = null;
+
+        try {
+            if (hubRef.current && typeof hubRef.current.stop === 'function') {
+                await hubRef.current.stop();
+            }
+        } catch (_) { }
+        hubRef.current = null;
     }
 
     return (
@@ -109,18 +118,18 @@ export default function CaptionsPanel(props) {
                 </div>
 
                 <div className="audio-toggle">
-                    <audio id="player" ref={audioRef} autoPlay playsInline></audio>
+                    <audio id="player" ref={audioRef} autoPlay></audio>
                     <button
                         className={`icon-button ${audioEnabled ? 'audio-enabled' : 'audio-disabled'}`}
                         onClick={async () => {
                             try {
-                                if (!audioEnabled) {
+                                if (audioEnabled) {
+                                    await closeRtc();
+                                    setAudioEnabled(false);
+                                } else {
                                     // Ensure any user-gesture unlocking happens before creating the RTC connection
                                     await connectRtc();
                                     setAudioEnabled(true);
-                                } else {
-                                    await closeRtc();
-                                    setAudioEnabled(false);
                                 }
                             } catch (e) {
                                 console.warn('toggle audio failed', e);

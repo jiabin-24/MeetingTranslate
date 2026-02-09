@@ -1,18 +1,23 @@
-﻿namespace EchoBot.WebRTC
+﻿using System.Collections.Concurrent;
+
+namespace EchoBot.WebRTC
 {
     public class RtcSessionManager
     {
-        private readonly Dictionary<string, RtcServerSession> _sessions = new();
+        private readonly Dictionary<string, RtcServerSession> _sessions = [];
         private readonly object _lock = new();
-        private readonly OpusBroadcaster _broadcaster;
+        private readonly MeetingBroadcaster _broadcaster;
 
-        public RtcSessionManager(OpusBroadcaster broadcaster)
+        private readonly ConcurrentDictionary<string, List<MeetingBroadcaster>> _meetingBroadcaster;
+
+
+        public RtcSessionManager(MeetingBroadcaster broadcaster)
         {
             _broadcaster = broadcaster;
             _broadcaster.AttachSessionSource(() => _sessions.Values);
         }
 
-        public Task<string> CreateOrUpdateAsync(string id, string sdpOffer)
+        public Task<string> CreateOrUpdateAsync(string id, string sdpOffer, string meetingId, string targetLang)
         {
             lock (_lock)
             {
@@ -49,10 +54,10 @@
             return Task.CompletedTask;
         }
 
-        public void PushPcmToAll(ReadOnlySpan<byte> pcm20ms48k16le)
+        public async Task PushPcmToAll(MemoryStream stream)
         {
             // Broadcast a 20ms 48kHz/16bit/Mono PCM frame to all peers
-            _broadcaster.PushPcm20Ms(pcm20ms48k16le);
+            await _broadcaster.PushAudio(stream);
         }
     }
 }

@@ -58,18 +58,22 @@ static class Program
 
         builder.RegisterBotServices();
 
-        // Real-time messaging: allow switching between Azure SignalR and original WebSocket
+        // Real-time messaging: Azure SignalR/SignalR
         var signalrConn = builder.Configuration.GetValue<string>("AzureSignalRConnection");
         if (!string.IsNullOrEmpty(signalrConn))
             builder.Services.AddSignalR().AddAzureSignalR(option => option.ConnectionString = signalrConn); // Use Azure SignalR service to scale real-time messaging
         else
-            builder.Services.AddSingleton<CaptionHub>(); // Keep original in-process WebSocket hub
+            builder.Services.AddSignalR(options =>
+            {
+                options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                options.ClientTimeoutInterval = TimeSpan.FromSeconds(45);
+            });
 
         // Register publisher implementation based on the mode
-        builder.Services.AddSingleton<ICaptionPublisher>(sp => CaptionPublisher.CreateInstance(!string.IsNullOrEmpty(signalrConn)));
+        builder.Services.AddSingleton<ICaptionPublisher>(sp => CaptionPublisher.CreateInstance());
 
         // WebRCT services
-        builder.Services.AddSingleton<OpusBroadcaster>();
+        builder.Services.AddSingleton<MeetingBroadcaster>();
         builder.Services.AddSingleton<RtcSessionManager>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
@@ -77,20 +81,8 @@ static class Program
         builder.Services.AddMvc().AddSessionStateTempDataProvider();
         builder.Services.AddSwaggerGen();
 
-        // 分布式缓存
-        var redisConfig = builder.Configuration.GetSection("Redis");
-        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
-        {
-            var options = ConfigurationOptions.Parse(redisConfig["Configuration"]!);
-            options.Password = redisConfig["Password"];
-            options.Ssl = true;
-            options.ReconnectRetryPolicy = new ExponentialRetry(5000); // 断线重连
-            options.ConnectTimeout = 5000;
-            options.SyncTimeout = 5000;
-            options.ClientName = redisConfig["InstanceName"];
-            return ConnectionMultiplexer.Connect(options);
-        });
-        builder.Services.AddSingleton<CacheHelper>();
+        BuildCache(builder);
+
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("DevCors", builder =>
@@ -104,31 +96,22 @@ static class Program
 
         var app = builder.Build();
         if (app.Environment.IsDevelopment())
-        {
-            app.UseDeveloperExceptionPage();
-            app.UseSwagger();
-            app.UseSwaggerUI();
-        }
+            app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
 
-        app.UseCors("DevCors");
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
-        app.UseWebSockets();
         app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
         {
             endpoints.MapControllers();
             endpoints.MapControllerRoute(
             name: "default",
             pattern: "{controller=Home}/{action=Index}/{id?}");
-
-            endpoints.MapHub<RtcHub>("/rtc"); // WebRTC signaling hub
-
-            if (!string.IsNullOrEmpty(signalrConn))
-                endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
-            else
-                endpoints.Map("/captionHub", async ctx => await ctx.RequestServices.GetRequiredService<CaptionHub>().HandleAsync(ctx)); // WebSocket hub for captions
         });
 
+        app.MapHub<RtcHub>("/rtc"); // WebRTC signaling hub
+        app.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
+
+        app.UseCors("DevCors");
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
         app.UseBotServices();
         app.UseSpaStaticFiles();
         app.UseSpa(spa =>
@@ -176,5 +159,24 @@ static class Program
 
         builder.Services.AddOptions<AIServiceSettings>().BindConfiguration(nameof(AIServiceSettings));
         builder.Services.AddOptions<TranslatorOptions>().BindConfiguration("Translator");
+    }
+
+    private static void BuildCache(WebApplicationBuilder builder)
+    {
+        // 分布式缓存
+        var redisConfig = builder.Configuration.GetSection("Redis");
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var options = ConfigurationOptions.Parse(redisConfig["Configuration"]!);
+            options.Password = redisConfig["Password"];
+            options.Ssl = true;
+            options.ReconnectRetryPolicy = new ExponentialRetry(5000); // 断线重连
+            options.ConnectTimeout = 5000;
+            options.SyncTimeout = 5000;
+            options.ClientName = redisConfig["InstanceName"];
+            return ConnectionMultiplexer.Connect(options);
+        });
+
+        builder.Services.AddSingleton<CacheHelper>();
     }
 }

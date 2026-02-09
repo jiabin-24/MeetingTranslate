@@ -46,8 +46,6 @@ namespace EchoBot.Media
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
         private const int MinIntervalMs = 500;
-        private const int FrameBytes = 960 * 2; // 20ms @ 48kHz mono 16-bit
-        private ArrayBufferWriter<byte> _ttsBufferWriter = new ArrayBufferWriter<byte>(FrameBytes * 4);
 
         private string _currentSpeakerId = string.Empty;
 
@@ -78,7 +76,7 @@ namespace EchoBot.Media
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
             // Use raw PCM output for better compatibility with WebRTC and lower latency (no need for additional decoding)
-            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw48Khz16BitMonoPcm);
+            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm);
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
@@ -100,8 +98,7 @@ namespace EchoBot.Media
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
 
-            _synthesizer = new SpeechSynthesizer(_speechConfig);
-            _synthesizer.Synthesizing += OnSynthesizing;
+            _synthesizer = new SpeechSynthesizer(_speechConfig, (AudioConfig?)null);
         }
 
         private async Task CreateRecognizerForSpeaker()
@@ -279,30 +276,18 @@ namespace EchoBot.Media
             }
         }
 
-        private void OnSynthesizing(Object? s, SpeechSynthesisEventArgs e)
-        {
-            // 文本转语音
-            if (e?.Result?.AudioData == null || e.Result.AudioData.Length == 0) return;
-
-            _ttsBufferWriter.Write(e.Result.AudioData);
-
-            while (_ttsBufferWriter.WrittenCount >= FrameBytes)
-            {
-                var span = _ttsBufferWriter.WrittenSpan.Slice(0, FrameBytes).ToArray();
-                _rtcSessionManager.PushPcmToAll(span);
-                // shift buffer
-                var remaining = _ttsBufferWriter.WrittenCount - FrameBytes;
-                var tmp = _ttsBufferWriter.WrittenSpan.Slice(FrameBytes, remaining).ToArray();
-                _ttsBufferWriter = new ArrayBufferWriter<byte>(Math.Max(FrameBytes * 4, remaining * 2));
-                _ttsBufferWriter.Write(tmp);
-            }
-        }
-
         private async Task TextToSpeech(string text, string lang, string speakerId)
         {
             if (lang.StartsWith("en"))
                 return;
-            await _synthesizer.SpeakTextAsync(text);
+
+            var result = await _synthesizer.SpeakTextAsync(text);
+            if (result.Reason != ResultReason.SynthesizingAudioCompleted)
+                throw new InvalidOperationException($"TTS failed: {result.Reason}");
+
+            var ms = new MemoryStream(result.AudioData, writable: false);
+
+            await _rtcSessionManager.PushPcmToAll(ms);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)

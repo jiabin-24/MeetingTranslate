@@ -9,7 +9,7 @@ namespace EchoBot.WebSocket
 
         public RtcHub(RtcSessionManager sessions) => _sessions = sessions;
 
-        public Task<string> Offer(string sdpOffer) => _sessions.CreateOrUpdateAsync(Context.ConnectionId, sdpOffer);
+        public Task<string> Offer(string sdpOffer, string meetingId, string targetLang) => _sessions.CreateOrUpdateAsync(Context.ConnectionId, sdpOffer, meetingId, targetLang);
 
         public Task Ice(string candidate) => _sessions.AddIceCandidateAsync(Context.ConnectionId, candidate);
 
