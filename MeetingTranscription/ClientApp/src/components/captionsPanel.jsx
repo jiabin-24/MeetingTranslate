@@ -77,9 +77,7 @@ export default function CaptionsPanel(props) {
 
     const safePlay = async () => {
         try {
-            console.log('[audio] trying to play...');
             //await audioRef.current.play();
-            console.log('[audio] play() success');
             log('[audio] play() ok');
         } catch (e) {
             log('[audio] play() blocked or failed:', (e && e.message) ? e.message : e);
