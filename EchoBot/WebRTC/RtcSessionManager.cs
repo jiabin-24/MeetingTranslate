@@ -178,6 +178,14 @@ namespace EchoBot.WebRTC
             return callConnection;
         }
 
+        public async Task Dispose(string groupId)
+        {
+            await _cache.DeleteAsync(ConnectKey(groupId));
+            await _cache.DeleteAsync(RoomKey(groupId));
+
+            _callConnDic.Remove(groupId, out _);
+        }
+
         private static string ConnectKey(string groupId) => $"CallConnectionId_{groupId}";
 
         private static string RoomKey(string groupId) => $"RoomId_{groupId}";
