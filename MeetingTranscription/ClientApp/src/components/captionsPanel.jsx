@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
-import * as signalR from '@microsoft/signalr';
+const { CallClient, VideoStreamRenderer, LocalVideoStream } = require('@azure/communication-calling');
+const { AzureCommunicationTokenCredential } = require('@azure/communication-common');
 import { API_BASE } from '../config/apiBase';
 
 export default function CaptionsPanel(props) {
@@ -12,8 +13,10 @@ export default function CaptionsPanel(props) {
     const [audioEnabled, setAudioEnabled] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
-    const pcRef = useRef(null);
-    const hubRef = useRef(null);
+
+    let callAgent;
+    let call;
+    let roomId;
 
     useEffect(() => {
         const el = containerRef.current;
@@ -56,56 +59,134 @@ export default function CaptionsPanel(props) {
     }, [lines, autoScrollEnabled]);
 
     const connectRtc = async () => {
-        const hub = new signalR.HubConnectionBuilder().withUrl(`${API_BASE}/rtc`).build();
-        await hub.start();
-        hubRef.current = hub;
+        const r = await fetch(`${API_BASE}/api/acs/addParticipant?groupId=${meetingId}`, { method: 'POST' });
+        const t = await r.json();
 
-        const pc = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' } // stun:stun.cloudflare.com
-            ]
-        });
+        roomId = t.roomId;
+        const tokenCredential = new AzureCommunicationTokenCredential(t.participants[0].userToken);
+        const callClient = new CallClient();
+        callAgent = await callClient.createCallAgent(tokenCredential);
 
-        pcRef.current = pc;
+        const call = callAgent.join({ roomId: roomId }, { videoOptions: undefined });
+        startCall(call);
+    }
 
-        // Create a data channel before creating the offer so the resulting m-line ordering (application/datachannel vs audio) matches the server-side SIPSorcery answer
-        try { pc.createDataChannel('sips'); } catch (e) { /* no-op */ }
+    const log = (...args) => {
+        console.log(...args);
+    }
 
-        pc.ontrack = async (e) => {
-            try {
-                const audioEl = audioRef.current || document.getElementById('player');
-                if (audioEl) {
-                    audioEl.srcObject = e.streams[0];
-                    // Attempt to play immediately. Browsers require a user gesture to allow audio autoplay;
-                    // the toggle button provides that gesture. Still, call play and ignore failures.
-                    try { await audioEl.play(); } catch (_) { /* autoplay blocked until user interaction */ }
-                }
-            } catch (_) { }
+    const safePlay = async () => {
+        try {
+            console.log('[audio] trying to play...');
+            //await audioRef.current.play();
+            console.log('[audio] play() success');
+            log('[audio] play() ok');
+        } catch (e) {
+            log('[audio] play() blocked or failed:', (e && e.message) ? e.message : e);
+        }
+    }
+
+    const startCall = async (c) => {
+        try {
+            call = c;
+            log('[call] state=', call.state);
+            if (typeof call.on === 'function') {
+                call.on('stateChanged', () => console.log('[call] stateChanged ->', call.state));
+
+                call.on('remoteParticipantsUpdated', (e) => {
+                    log('[call] remoteParticipantsUpdated: added=', e.added?.length || 0, 'removed=', e.removed?.length || 0);
+                    (e.added || []).forEach(wireParticipant);
+                });
+            }
+
+            // 已经存在的 participant
+            (call.remoteParticipants || []).forEach(wireParticipant);
+
+            // 有些版本 call 也直接提供 remoteAudioStreams
+            if (Array.isArray(call.remoteAudioStreams) && call.remoteAudioStreams.length) {
+                log('[call] initial remoteAudioStreams.length=', call.remoteAudioStreams.length);
+                attachRemoteAudioStream(call.remoteAudioStreams[0]).catch(err => log('[attach] error', err));
+            }
+
+            if (typeof call.on === 'function') {
+                try {
+                    call.on('remoteAudioStreamsUpdated', (e) => {
+                        log('[call] remoteAudioStreamsUpdated: added=', e.added?.length || 0, 'removed=', e.removed?.length || 0);
+                        if (e.added && e.added.length) {
+                            attachRemoteAudioStream(e.added[0]).catch(err => log('[attach] error', err));
+                        }
+                    });
+                } catch { }
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    const attachRemoteAudioStream = async (remoteAudioStream) => {
+        if (!remoteAudioStream) return;
+        console.log('[remoteAudio] attaching stream...');
+
+        // 1) 优先尝试 getMediaStream()
+        if (typeof remoteAudioStream.getMediaStream === 'function') {
+            const ms = await remoteAudioStream.getMediaStream();
+            audioRef.current.srcObject = ms;
+            await safePlay();
+            console.log('[remoteAudio] attached via getMediaStream()');
+            return;
+        }
+
+        // 2) 其次尝试 getMediaStreamTrack() -> MediaStream
+        if (typeof remoteAudioStream.getMediaStreamTrack === 'function') {
+            const track = await remoteAudioStream.getMediaStreamTrack();
+            if (track) {
+                const ms = new MediaStream([track]);
+                audioRef.current.srcObject = ms;
+                await safePlay();
+                console.log('[remoteAudio] attached via getMediaStreamTrack()');
+                return;
+            }
+        }
+
+        console.log('[remoteAudio] cannot attach: no getMediaStream/getMediaStreamTrack found on object keys=', Object.keys(remoteAudioStream));
+    }
+
+    const wireParticipant = (participant) => {
+        if (!participant) return;
+        console.log('[participant] added:', participant.identifier);
+
+        // 一些版本叫 audioStreams / audioStreamsUpdated；也可能叫 remoteAudioStreams/remoteAudioStreamsUpdated
+        const tryHook = (streamListProp, updatedEventName) => {
+            const list = participant[streamListProp];
+            if (Array.isArray(list) && list.length) {
+                console.log(`[participant] initial ${streamListProp}.length=`, list.length);
+                // 取第一条先播
+                attachRemoteAudioStream(list[0]).catch(err => console.log('[attach] error', err));
+            }
+            if (typeof participant.on === 'function') {
+                try {
+                    participant.on(updatedEventName, (e) => {
+                        console.log(`[participant] ${updatedEventName}: added=${e.added?.length || 0}, removed=${e.removed?.length || 0}`);
+                        if (e.added && e.added.length) {
+                            attachRemoteAudioStream(e.added[0]).catch(err => console.log('[attach] error', err));
+                        }
+                    });
+                    console.log(`[participant] hooked ${updatedEventName}`);
+                    return true;
+                } catch { }
+            }
+            return false;
         };
-        pc.addTransceiver('audio', { direction: 'recvonly' });
 
-        pc.onicecandidate = async (e) => {
-            if (e.candidate) await hub.invoke('Ice', e.candidate.candidate);
-        };
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        const answerSdp = await hub.invoke('Offer', offer.sdp);
-        await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+        // 先试常见组合
+        if (tryHook('audioStreams', 'audioStreamsUpdated')) return;
+        if (tryHook('remoteAudioStreams', 'remoteAudioStreamsUpdated')) return;
+        // 兜底：把对象结构打印出来便于你按实际字段改
+        console.log('[participant] cannot auto-hook streams. Keys=', Object.keys(participant));
     }
 
     const closeRtc = async () => {
-        try {
-            await pcRef.current?.close();
-        } catch (_) { }
-        pcRef.current = null;
 
-        try {
-            if (hubRef.current && typeof hubRef.current.stop === 'function') {
-                await hubRef.current.stop();
-            }
-        } catch (_) { }
-        hubRef.current = null;
     }
 
     return (

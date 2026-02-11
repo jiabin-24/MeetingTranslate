@@ -3,6 +3,7 @@ using EchoBot.Util;
 using EchoBot.WebRTC;
 using EchoBot.WebSocket;
 using MeetingTranscription.Models.Configuration;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.Extensions.Options;
@@ -58,8 +59,7 @@ namespace EchoBot.Media
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
         private readonly SpeechConfig _speechConfig;
-        private readonly SpeechSynthesizer _synthesizer;
-        private readonly ICaptionPublisher _wsPublisher;
+        private readonly IHubContext<CaptionSignalRHub> _captionHub;
         private readonly RtcSessionManager _rtcSessionManager;
         private readonly ITranslatorClient _translatorClient;
         private readonly IConnectionMultiplexer _mux;
@@ -74,14 +74,12 @@ namespace EchoBot.Media
         public SpeechService(AppSettings settings, string threadId = "")
         {
             _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
-            _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
-            // Use raw PCM output for better compatibility with WebRTC and lower latency (no need for additional decoding)
-            _speechConfig.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm);
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _threadId = threadId ?? string.Empty;
 
+            _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
             // 提升识别准确率
             _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
             _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "150"); // 让断句更短
@@ -94,11 +92,9 @@ namespace EchoBot.Media
             _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
 
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
-            _wsPublisher = ServiceLocator.GetRequiredService<ICaptionPublisher>();
+            _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
-
-            _synthesizer = new SpeechSynthesizer(_speechConfig, (AudioConfig?)null);
         }
 
         private async Task CreateRecognizerForSpeaker()
@@ -259,7 +255,6 @@ namespace EchoBot.Media
 
                 _audioInputStream.Dispose();
                 _audioOutputStream.Dispose();
-                _synthesizer.Dispose();
 
                 _isRunning = false;
             }
@@ -281,13 +276,7 @@ namespace EchoBot.Media
             if (lang.StartsWith("en"))
                 return;
 
-            var result = await _synthesizer.SpeakTextAsync(text);
-            if (result.Reason != ResultReason.SynthesizingAudioCompleted)
-                throw new InvalidOperationException($"TTS failed: {result.Reason}");
-
-            var ms = new MemoryStream(result.AudioData, writable: false);
-
-            await _rtcSessionManager.PushPcmToAll(ms);
+            await _rtcSessionManager.PlayText(_threadId, text, lang, null);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
@@ -331,8 +320,8 @@ namespace EchoBot.Media
 
             try
             {
-                // send the transcript to the websocket clients
-                await _wsPublisher.PublishCaptionAsync(payload);
+                // Send the transcript to the websocket clients
+                await _captionHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", [payload], default);
 
                 if (!isFinal)
                     return;

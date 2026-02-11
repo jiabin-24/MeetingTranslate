@@ -39,5 +39,10 @@ namespace EchoBot.Util
         {
             await _mux.GetDatabase().KeyDeleteAsync(key);
         }
+
+        public async Task SetAsync(string key, TimeSpan timeSpan, object obj)
+        {
+            await _mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);
+        }
     }
 }

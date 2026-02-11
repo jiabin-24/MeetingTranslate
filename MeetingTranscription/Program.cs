@@ -1,4 +1,6 @@
-﻿using Azure.Identity;
+﻿using Azure.Communication.CallAutomation;
+using Azure.Communication.Identity;
+using Azure.Identity;
 using DotNetEnv.Configuration;
 using EchoBot;
 using EchoBot.Util;
@@ -69,11 +71,10 @@ static class Program
                 options.ClientTimeoutInterval = TimeSpan.FromSeconds(45);
             });
 
-        // Register publisher implementation based on the mode
-        builder.Services.AddSingleton<ICaptionPublisher>(sp => CaptionPublisher.CreateInstance());
-
-        // WebRCT services
-        builder.Services.AddSingleton<MeetingBroadcaster>();
+        // Azure Conmmunication Service (WebRTC)
+        var acsConn = builder.Configuration.GetValue<string>("ACSConnectionString");
+        builder.Services.AddSingleton(new CallAutomationClient(acsConn));
+        builder.Services.AddSingleton(new CommunicationIdentityClient(acsConn));
         builder.Services.AddSingleton<RtcSessionManager>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
@@ -98,22 +99,22 @@ static class Program
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
 
+        app.UseCors("DevCors");
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+        app.UseBotServices();
+        app.UseSpaStaticFiles();
+
         app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
         {
             endpoints.MapControllers();
             endpoints.MapControllerRoute(
             name: "default",
             pattern: "{controller=Home}/{action=Index}/{id?}");
+
+            endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
         });
 
-        app.MapHub<RtcHub>("/rtc"); // WebRTC signaling hub
-        app.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
-
-        app.UseCors("DevCors");
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
-        app.UseBotServices();
-        app.UseSpaStaticFiles();
         app.UseSpa(spa =>
         {
             spa.Options.SourcePath = "ClientApp";

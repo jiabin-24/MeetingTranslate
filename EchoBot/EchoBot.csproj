@@ -11,6 +11,9 @@
 
 	<ItemGroup>
 		<PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
+		<PackageReference Include="Azure.Communication.Identity" Version="1.4.0-beta.1" />
+		<PackageReference Include="Azure.Communication.CallAutomation" Version="1.5.1" />
+		<PackageReference Include="Azure.Communication.Rooms" Version="1.1.1" />
 		<PackageReference Include="DotNetEnv" Version="3.1.1" />
 		<PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
 		<PackageReference Include="Microsoft.Azure.SignalR" Version="1.32.0" />
