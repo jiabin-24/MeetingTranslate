@@ -44,6 +44,9 @@ namespace EchoBot.Media
 
         private int _placeHolderIndex;
 
+        // Energy threshold (RMS) above which we consider this buffer as active speech for assigning speaker id
+        private const double SpeakerEnergyThreshold = 500.0;
+
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
         private const int MinIntervalMs = 500;
@@ -152,7 +155,7 @@ namespace EchoBot.Media
                 if (string.IsNullOrWhiteSpace(partialText))
                     return;
 
-                if (!ShouldSend(speakerId, MinIntervalMs))
+                if (!RecognizingInterval(speakerId, MinIntervalMs))
                     return;
 
                 var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
@@ -165,7 +168,7 @@ namespace EchoBot.Media
         }
 
         // 是否可发送（满足时间窗口）
-        private static bool ShouldSend(string key, int minIntervalMs)
+        private static bool RecognizingInterval(string key, int minIntervalMs)
         {
             var now = Environment.TickCount64; // 单调递增毫秒
             var last = _lastSentAtMs.GetOrAdd(key, 0L);
@@ -218,7 +221,20 @@ namespace EchoBot.Media
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
                     if (speakerId != null)
-                        _currentSpeakerId = speakerId;
+                    {
+                        // Compute buffer energy (RMS) for 16-bit PCM and only assign speaker when above threshold
+                        try
+                        {
+                            var rms = ComputeRmsFrom16BitPcm(buffer, bufferLength);
+                            if (rms >= SpeakerEnergyThreshold)
+                                _currentSpeakerId = speakerId;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug(ex, "Failed to compute audio energy, assigning speaker id by default");
+                            _currentSpeakerId = speakerId;
+                        }
+                    }
 
                     _audioInputStream.Write(buffer);
                 }
@@ -388,6 +404,29 @@ namespace EchoBot.Media
                     dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
+        }
+
+        // Compute RMS energy from a 16-bit PCM buffer
+        private static double ComputeRmsFrom16BitPcm(byte[] buffer, long bufferLength)
+        {
+            if (buffer == null || bufferLength <= 1) return 0.0;
+
+            long sampleCount = bufferLength / 2; // 16-bit samples
+            if (sampleCount == 0) return 0.0;
+
+            double sumSquares = 0.0;
+
+            for (long i = 0; i < sampleCount; i++)
+            {
+                int offset = (int)(i * 2);
+                short sample = (short)(buffer[offset] | (buffer[offset + 1] << 8));
+                double normalized = sample; // keep in int16 domain to compute RMS
+                sumSquares += normalized * normalized;
+            }
+
+            double meanSquares = sumSquares / sampleCount;
+            double rms = Math.Sqrt(meanSquares);
+            return rms;
         }
     }
 }

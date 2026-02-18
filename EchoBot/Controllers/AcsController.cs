@@ -1,29 +1,13 @@
-﻿using EchoBot.Util;
-using EchoBot.WebRTC;
+﻿using EchoBot.WebRTC;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EchoBot.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class AcsController : ControllerBase
+    public class AcsController(RtcSessionManager rtcSessionManager) : ControllerBase
     {
-        private readonly RtcSessionManager _rtcSessionManager;
-
-        private ILogger _logger;
-
-        private readonly IConfiguration _config;
-
-        private readonly CacheHelper _cache;
-
-        public AcsController(RtcSessionManager rtcSessionManager, IConfiguration config, ILogger<AcsController> logger,
-            CacheHelper cache)
-        {
-            _rtcSessionManager = rtcSessionManager;
-            _config = config;
-            _logger = logger;
-            _cache = cache;
-        }
+        private readonly RtcSessionManager _rtcSessionManager = rtcSessionManager;
 
         [HttpPost("callback")]
         public IActionResult Callback()

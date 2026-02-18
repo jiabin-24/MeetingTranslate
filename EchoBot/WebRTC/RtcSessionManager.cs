@@ -93,11 +93,13 @@ namespace EchoBot.WebRTC
                 var cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId));
                 if (string.IsNullOrEmpty(cachedRoomId))
                 {
+                    // 如果房间不存在，先创建房间，再添加参与者，然后返回
                     var initRoomResult = await InitRoom(groupId);
                     await _cache.SetAsync(RoomKey(groupId), TimeSpan.FromHours(1), initRoomResult.RoomId);
                     return initRoomResult;
                 }
 
+                // 房间已存在，直接添加参与者并返回
                 var callConn = await EnsureGroupCallConnectionAsync(groupId);
                 var (_, user) = await AddParticipant();
 
