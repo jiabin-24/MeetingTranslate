@@ -144,11 +144,14 @@ export function useRealtimeCaptions(opts) {
         const conn = connRef.current;
         if (!conn) return;
         // Try to re-subscribe on the existing connection. If the connection isn't ready
-        // the invoke will fail and be logged, which is acceptable.
+        // the invoke will fail when the connection isn't 'Connected'. Guard
+        // against that to avoid noisy console errors.
         (async () => {
             try {
                 if (opts.meetingId) {
-                    try { await conn.invoke('Subscribe', opts.meetingId, opts.targetLang); } catch (e) { console.warn('Resubscribe invoke failed', e); }
+                    if (conn.state === signalR.HubConnectionState.Connected) {
+                        try { await conn.invoke('Subscribe', opts.meetingId, opts.targetLang); } catch (e) { console.warn('Resubscribe invoke failed', e); }
+                    }
                 }
             } catch (e) { /* ignore */ }
         })();

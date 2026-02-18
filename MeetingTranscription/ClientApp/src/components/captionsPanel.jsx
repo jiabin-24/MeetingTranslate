@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
-const { CallClient, VideoStreamRenderer, LocalVideoStream } = require('@azure/communication-calling');
+const { CallClient } = require('@azure/communication-calling');
 const { AzureCommunicationTokenCredential } = require('@azure/communication-common');
 import { API_BASE } from '../config/apiBase';
 
@@ -59,7 +59,7 @@ export default function CaptionsPanel(props) {
     }, [lines, autoScrollEnabled]);
 
     const connectRtc = async () => {
-        const r = await fetch(`${API_BASE}/api/acs/addParticipant?groupId=${meetingId}`, { method: 'POST' });
+        const r = await fetch(`${API_BASE}/api/acs/addParticipant?groupId=${meetingId}&lang=${targetLang}&participantId=${currentUser.id}`, { method: 'POST' });
         const t = await r.json();
 
         roomId = t.roomId;
@@ -75,21 +75,12 @@ export default function CaptionsPanel(props) {
         console.log(...args);
     }
 
-    const safePlay = async () => {
-        try {
-            //await audioRef.current.play();
-            log('[audio] play() ok');
-        } catch (e) {
-            log('[audio] play() blocked or failed:', (e && e.message) ? e.message : e);
-        }
-    }
-
     const startCall = async (c) => {
         try {
             call = c;
             log('[call] state=', call.state);
             if (typeof call.on === 'function') {
-                call.on('stateChanged', () => console.log('[call] stateChanged ->', call.state));
+                call.on('stateChanged', () => log('[call] stateChanged ->', call.state));
 
                 call.on('remoteParticipantsUpdated', (e) => {
                     log('[call] remoteParticipantsUpdated: added=', e.added?.length || 0, 'removed=', e.removed?.length || 0);
@@ -117,20 +108,19 @@ export default function CaptionsPanel(props) {
                 } catch { }
             }
         } catch (error) {
-            console.error(error);
+            error(error);
         }
     }
 
     const attachRemoteAudioStream = async (remoteAudioStream) => {
         if (!remoteAudioStream) return;
-        console.log('[remoteAudio] attaching stream...');
+        log('[remoteAudio] attaching stream...');
 
         // 1) 优先尝试 getMediaStream()
         if (typeof remoteAudioStream.getMediaStream === 'function') {
             const ms = await remoteAudioStream.getMediaStream();
             audioRef.current.srcObject = ms;
-            await safePlay();
-            console.log('[remoteAudio] attached via getMediaStream()');
+            log('[remoteAudio] attached via getMediaStream()');
             return;
         }
 
@@ -140,36 +130,35 @@ export default function CaptionsPanel(props) {
             if (track) {
                 const ms = new MediaStream([track]);
                 audioRef.current.srcObject = ms;
-                await safePlay();
-                console.log('[remoteAudio] attached via getMediaStreamTrack()');
+                log('[remoteAudio] attached via getMediaStreamTrack()');
                 return;
             }
         }
 
-        console.log('[remoteAudio] cannot attach: no getMediaStream/getMediaStreamTrack found on object keys=', Object.keys(remoteAudioStream));
+        log('[remoteAudio] cannot attach: no getMediaStream/getMediaStreamTrack found on object keys=', Object.keys(remoteAudioStream));
     }
 
     const wireParticipant = (participant) => {
         if (!participant) return;
-        console.log('[participant] added:', participant.identifier);
+        log('[participant] added:', participant.identifier);
 
         // 一些版本叫 audioStreams / audioStreamsUpdated；也可能叫 remoteAudioStreams/remoteAudioStreamsUpdated
         const tryHook = (streamListProp, updatedEventName) => {
             const list = participant[streamListProp];
             if (Array.isArray(list) && list.length) {
-                console.log(`[participant] initial ${streamListProp}.length=`, list.length);
+                log(`[participant] initial ${streamListProp}.length=`, list.length);
                 // 取第一条先播
-                attachRemoteAudioStream(list[0]).catch(err => console.log('[attach] error', err));
+                attachRemoteAudioStream(list[0]).catch(err => log('[attach] error', err));
             }
             if (typeof participant.on === 'function') {
                 try {
                     participant.on(updatedEventName, (e) => {
-                        console.log(`[participant] ${updatedEventName}: added=${e.added?.length || 0}, removed=${e.removed?.length || 0}`);
+                        log(`[participant] ${updatedEventName}: added=${e.added?.length || 0}, removed=${e.removed?.length || 0}`);
                         if (e.added && e.added.length) {
-                            attachRemoteAudioStream(e.added[0]).catch(err => console.log('[attach] error', err));
+                            attachRemoteAudioStream(e.added[0]).catch(err => log('[attach] error', err));
                         }
                     });
-                    console.log(`[participant] hooked ${updatedEventName}`);
+                    log(`[participant] hooked ${updatedEventName}`);
                     return true;
                 } catch { }
             }
@@ -180,7 +169,7 @@ export default function CaptionsPanel(props) {
         if (tryHook('audioStreams', 'audioStreamsUpdated')) return;
         if (tryHook('remoteAudioStreams', 'remoteAudioStreamsUpdated')) return;
         // 兜底：把对象结构打印出来便于你按实际字段改
-        console.log('[participant] cannot auto-hook streams. Keys=', Object.keys(participant));
+        log('[participant] cannot auto-hook streams. Keys=', Object.keys(participant));
     }
 
     const closeRtc = async () => {
@@ -211,7 +200,7 @@ export default function CaptionsPanel(props) {
                                     setAudioEnabled(true);
                                 }
                             } catch (e) {
-                                console.warn('toggle audio failed', e);
+                                log('toggle audio failed', e);
                             }
                         }}
                         aria-pressed={audioEnabled}

@@ -2,7 +2,6 @@
 using EchoBot.Constants;
 using EchoBot.Models;
 using EchoBot.Util;
-using EchoBot.WebRTC;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
@@ -26,27 +25,39 @@ namespace EchoBot.Bot
     /// </summary>
     /// <seealso cref="System.IDisposable" />
     /// <seealso cref="EchoBot.Bot.IBotService" />
-    public class BotService : IDisposable, IBotService
+    /// <remarks>
+    /// Initializes a new instance of the <see cref="BotService" /> class.
+    /// </remarks>
+    /// <param name="graphLogger"></param>
+    /// <param name="logger"></param>
+    /// <param name="settings"></param>
+    /// <param name="mediaLogger"></param>
+    public class BotService(
+        IGraphLogger graphLogger,
+        ILogger<BotService> logger,
+        IOptions<AppSettings> settings,
+        IBotMediaLogger mediaLogger,
+        IConnectionMultiplexer mux) : IDisposable, IBotService
     {
         /// <summary>
         /// The Graph logger
         /// </summary>
-        private readonly IGraphLogger _graphLogger;
+        private readonly IGraphLogger _graphLogger = graphLogger;
 
         /// <summary>
         /// The logger
         /// </summary>
-        private readonly ILogger _logger;
+        private readonly ILogger _logger = logger;
 
         /// <summary>
         /// The settings
         /// </summary>
-        private readonly AppSettings _settings;
+        private readonly AppSettings _settings = settings.Value;
 
         /// <summary>
         /// Logger for logging media platform information
         /// </summary>
-        private readonly IBotMediaLogger _mediaPlatformLogger;
+        private readonly IBotMediaLogger _mediaPlatformLogger = mediaLogger;
 
         /// <summary>
         /// Gets the collection of call handlers.
@@ -60,7 +71,7 @@ namespace EchoBot.Bot
         /// <value>The client.</value>
         public ICommunicationsClient Client { get; private set; }
 
-        private readonly IConnectionMultiplexer _mux;
+        private readonly IConnectionMultiplexer _mux = mux;
 
 
         /// <summary>
@@ -70,27 +81,6 @@ namespace EchoBot.Bot
         {
             this.Client?.Dispose();
             this.Client = null;
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BotService" /> class.
-        /// </summary>
-        /// <param name="graphLogger"></param>
-        /// <param name="logger"></param>
-        /// <param name="settings"></param>
-        /// <param name="mediaLogger"></param>
-        public BotService(
-            IGraphLogger graphLogger,
-            ILogger<BotService> logger,
-            IOptions<AppSettings> settings,
-            IBotMediaLogger mediaLogger,
-            IConnectionMultiplexer mux)
-        {
-            _graphLogger = graphLogger;
-            _logger = logger;
-            _settings = settings.Value;
-            _mediaPlatformLogger = mediaLogger;
-            _mux = mux;
         }
 
         /// <summary>
