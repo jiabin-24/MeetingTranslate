@@ -289,10 +289,7 @@ namespace EchoBot.Media
 
         private async Task TextToSpeech(string text, string lang, string speakerId)
         {
-            if (lang.StartsWith("en"))
-                return;
-
-            await _rtcSessionManager.PlayText(_threadId, text, lang, null);
+            await _rtcSessionManager.PlayText(_threadId, text, lang, speakerId);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
@@ -358,7 +355,7 @@ namespace EchoBot.Media
         private async Task<Models.Participant> GetParticipant(string audioId)
         {
             // determine speaker label from active speakers if available
-            if (_readFromInstanceTimes++ > 50)
+            if (_readFromInstanceTimes++ > 100)
             {
                 _audioToIdentityMap.Clear();
                 _readFromInstanceTimes = 0;

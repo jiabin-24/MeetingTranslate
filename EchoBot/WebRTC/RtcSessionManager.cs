@@ -1,9 +1,7 @@
-﻿using Azure;
-using Azure.Communication;
+﻿using Azure.Communication;
 using Azure.Communication.CallAutomation;
 using Azure.Communication.Identity;
 using Azure.Communication.Rooms;
-using Azure.Core;
 using EchoBot.Util;
 using System.Collections.Concurrent;
 using System.Security;
@@ -18,11 +16,11 @@ namespace EchoBot.WebRTC
 
         private readonly ConcurrentDictionary<string, CallConnection> _callConnDic = new();
 
-        private readonly IConfiguration _config;
-
         private readonly ILogger _logger;
 
         private readonly Uri _callback;
+
+        private readonly Uri _cognitiveServicesEndpoint;
 
         private readonly string _acsConnectionString;
 
@@ -30,88 +28,82 @@ namespace EchoBot.WebRTC
         {
             _cache = cache;
             _automationClient = automationClient;
-            _config = config;
             _logger = logger;
 
-            _callback = new Uri($"{_config["AppBaseUrl"]}/api/acs/callback");
-            _acsConnectionString = _config["ACSConnectionString"];
+            _callback = new Uri($"{config["AppBaseUrl"]}/api/acs/callback");
+            _cognitiveServicesEndpoint = new Uri(config["CognitiveServicesEndpoint"]);
+            _acsConnectionString = config["ACSConnectionString"];
         }
 
-        public async Task PlayText(string groupId, string text, string lang, string? voiceName)
+        public async Task PlayText(string groupId, string text, string lang, string speakerId, string? voiceName = null)
         {
             var callConn = await EnsureGroupCallConnectionAsync(groupId);
             var media = callConn.GetCallMedia();
+            var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
+            var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)))
+                .Where(p => p.Lang.Equals(lang) && !p.EntraId.Equals(speakerId)).Select(p => p.UserId).ToList();
             voiceName ??= "zh-CN-XiaoxiaoNeural";
 
             var ssml = $"<speak version=\"1.0\" xml:lang=\"zh-CN\"><voice name=\"{SecurityElement.Escape(voiceName)}\">{SecurityElement.Escape(text)}</voice></speak>";
             var ssmlSrc = new SsmlSource(ssml);
 
-            await media.PlayToAllAsync(ssmlSrc);
+            var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
+                .Select(p => p.Identifier).ToList();
+            if (targets.Count == 0)
+                return;
+            await media.PlayAsync(ssmlSrc, targets);
         }
 
         public async Task<CallConnection> EnsureGroupCallConnectionAsync(string groupId)
         {
             if (_callConnDic.TryGetValue(groupId, out CallConnection callConnection))
-            {
                 return callConnection;
-            }
 
-            var cachedConnectionId = await _cache.GetAsync<string>(ConnectKey(groupId));
-            if (!string.IsNullOrEmpty(cachedConnectionId))
+            string cachedConnectionId;
+            if (!string.IsNullOrEmpty(cachedConnectionId = await _cache.GetAsync<string>(ConnectKey(groupId))))
             {
                 callConnection = _automationClient.GetCallConnection(cachedConnectionId);
                 _callConnDic.TryAdd(groupId, callConnection);
                 return callConnection;
             }
 
-            var cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId));
-            if (string.IsNullOrEmpty(cachedRoomId))
-                throw new ArgumentException("Room has not init");
+            string cachedRoomId;
+            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId))))
+                throw new ArgumentException("Room has not been inited");
 
             var callLocator = new RoomCallLocator(cachedRoomId);
             var connectCallOptions = new ConnectCallOptions(callLocator, _callback)
             {
-                CallIntelligenceOptions = new CallIntelligenceOptions() { CognitiveServicesEndpoint = new Uri(_config["CognitiveServicesEndpoint"]) },
+                CallIntelligenceOptions = new CallIntelligenceOptions() { CognitiveServicesEndpoint = _cognitiveServicesEndpoint },
             };
 
             ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
             var callConnectionId = callResult.CallConnectionProperties.CallConnectionId;
 
-            _logger.LogInformation($"CALL CONNECTION ID : {callConnectionId}");
-            callConnection = GetConnection(callConnectionId);
+            _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", callConnectionId);
+            callConnection = _automationClient.GetCallConnection(callConnectionId);
 
             _callConnDic.TryAdd(groupId, callConnection);
-            await _cache.GetOrSetAsync(ConnectKey(groupId), TimeSpan.FromHours(1), () => callConnectionId);
+            await _cache.SetAsync(ConnectKey(groupId), TimeSpan.FromHours(2), callConnectionId);
 
             return callConnection;
         }
 
-        public async Task<Models.Room> AddParticipant(string groupId)
+        public async Task<Models.Room> AddRoomParticipant(string groupId, string lang, string participantId)
         {
             try
             {
                 var cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId));
                 if (string.IsNullOrEmpty(cachedRoomId))
                 {
-                    // 如果房间不存在，先创建房间，再添加参与者，然后返回
-                    var initRoomResult = await InitRoom(groupId);
-                    await _cache.SetAsync(RoomKey(groupId), TimeSpan.FromHours(1), initRoomResult.RoomId);
-                    return initRoomResult;
+                    // 如果房间不存在，先创建房间（同时添加参与者），然后返回
+                    return await InitRoom(groupId, lang, participantId);
                 }
 
                 // 房间已存在，直接添加参与者并返回
-                var callConn = await EnsureGroupCallConnectionAsync(groupId);
-                var (_, user) = await AddParticipant();
-
-                var callInvite = new CallInvite(new CommunicationUserIdentifier(user.UserId));
-                var addParticipantOptions = new AddParticipantOptions(callInvite)
-                {
-                    OperationContext = "addPSTNUserContext",
-                    InvitationTimeoutInSeconds = 30,
-                    OperationCallbackUri = _callback
-                };
-
-                await callConn.AddParticipantAsync(addParticipantOptions);
+                var (participant, user) = await CreateParticipant(groupId, lang, participantId);
+                var roomsClient = new RoomsClient(_acsConnectionString);
+                await roomsClient.AddOrUpdateParticipantsAsync(cachedRoomId, [participant]);
 
                 return new Models.Room
                 {
@@ -126,12 +118,11 @@ namespace EchoBot.WebRTC
             }
         }
 
-        private async Task<Models.Room> InitRoom(string groupId)
+        private async Task<Models.Room> InitRoom(string groupId, string lang, string participantId)
         {
             var roomsClient = new RoomsClient(_acsConnectionString);
-            var (participant, user) = await AddParticipant();
-            var (participant2, user2) = await AddParticipant();
-            var roomParticipants = new List<RoomParticipant> { participant, participant2 };
+            var (participant, user) = await CreateParticipant(groupId, lang, participantId);
+            var roomParticipants = new List<RoomParticipant> { participant };
 
             var options = new CreateRoomOptions()
             {
@@ -144,7 +135,8 @@ namespace EchoBot.WebRTC
             var response = await roomsClient.CreateRoomAsync(options);
             var roomId = response.Value.Id;
 
-            _logger.LogInformation($"ROOM ID: {response.Value.Id}");
+            await _cache.SetAsync(RoomKey(groupId), TimeSpan.FromHours(2), roomId);
+            _logger.LogInformation("Init with ROOM ID: {RoomId}", roomId);
 
             return new Models.Room
             {
@@ -153,37 +145,38 @@ namespace EchoBot.WebRTC
             };
         }
 
-        private async Task<(RoomParticipant, Models.RoomParticipant)> AddParticipant()
+        private async Task<(RoomParticipant, Models.RoomParticipant)> CreateParticipant(string groupId, string lang, string participantId)
         {
             var identityClient = new CommunicationIdentityClient(_acsConnectionString);
             var scopes = new List<string> { "chat", "voip" };
 
-            var user = identityClient.CreateUser();
-            Response<AccessToken> userToken = await identityClient.GetTokenAsync(user.Value, scopes: scopes.Select(x => new CommunicationTokenScope(x)));
-            var attendee = user.Value.RawId;
-            var participant = new RoomParticipant(new CommunicationUserIdentifier(attendee))
+            var user = identityClient.CreateUser().Value;
+            var userId = user.RawId;
+            var userToken = (await identityClient.GetTokenAsync(user, scopes: scopes.Select(x => new CommunicationTokenScope(x)))).Value;
+            var participant = new RoomParticipant(new CommunicationUserIdentifier(userId))
             {
-                Role = ParticipantRole.Presenter
+                Role = ParticipantRole.Attendee
             };
 
-            return (participant, new Models.RoomParticipant
+            var roomParticipant = new Models.RoomParticipant
             {
-                UserId = attendee,
-                UserToken = userToken.Value.Token
-            });
-        }
+                UserId = userId,
+                EntraId = participantId,
+                UserToken = userToken.Token,
+                Lang = lang
+            };
 
-        private CallConnection GetConnection(string callConnectionId)
-        {
-            CallConnection callConnection = !string.IsNullOrEmpty(callConnectionId) ? _automationClient.GetCallConnection(callConnectionId)
-                : throw new ArgumentNullException("Call connection id is empty");
-            return callConnection;
+            var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)) ?? []).Union([roomParticipant]);
+            await _cache.SetAsync(RoomParticipantKey(groupId), TimeSpan.FromHours(2), participants);
+
+            return (participant, roomParticipant);
         }
 
         public async Task Dispose(string groupId)
         {
             await _cache.DeleteAsync(ConnectKey(groupId));
             await _cache.DeleteAsync(RoomKey(groupId));
+            await _cache.DeleteAsync(RoomParticipantKey(groupId));
 
             _callConnDic.Remove(groupId, out _);
         }
@@ -191,5 +184,7 @@ namespace EchoBot.WebRTC
         private static string ConnectKey(string groupId) => $"CallConnectionId_{groupId}";
 
         private static string RoomKey(string groupId) => $"RoomId_{groupId}";
+
+        private static string RoomParticipantKey(string groupId) => $"RoomParticipantId_{groupId}";
     }
 }
