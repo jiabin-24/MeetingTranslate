@@ -15,7 +15,7 @@ export default function CaptionsPanel(props) {
     const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
 
     let callAgent;
-    let call;
+    const [call, setCall] = useState(null);
     let roomId;
 
     useEffect(() => {
@@ -67,8 +67,8 @@ export default function CaptionsPanel(props) {
         const callClient = new CallClient();
         callAgent = await callClient.createCallAgent(tokenCredential);
 
-        const call = callAgent.join({ roomId: roomId }, { videoOptions: undefined });
-        startCall(call);
+        const c = callAgent.join({ roomId: roomId }, { videoOptions: undefined });
+        startCall(c);
     }
 
     const log = (...args) => {
@@ -77,29 +77,29 @@ export default function CaptionsPanel(props) {
 
     const startCall = async (c) => {
         try {
-            call = c;
-            log('[call] state=', call.state);
-            if (typeof call.on === 'function') {
-                call.on('stateChanged', () => log('[call] stateChanged ->', call.state));
+            setCall(c);
+            log('[call] state=', c.state);
+            if (typeof c.on === 'function') {
+                c.on('stateChanged', () => log('[call] stateChanged ->', c.state));
 
-                call.on('remoteParticipantsUpdated', (e) => {
+                c.on('remoteParticipantsUpdated', (e) => {
                     log('[call] remoteParticipantsUpdated: added=', e.added?.length || 0, 'removed=', e.removed?.length || 0);
                     (e.added || []).forEach(wireParticipant);
                 });
             }
 
             // 已经存在的 participant
-            (call.remoteParticipants || []).forEach(wireParticipant);
+            (c.remoteParticipants || []).forEach(wireParticipant);
 
             // 有些版本 call 也直接提供 remoteAudioStreams
-            if (Array.isArray(call.remoteAudioStreams) && call.remoteAudioStreams.length) {
-                log('[call] initial remoteAudioStreams.length=', call.remoteAudioStreams.length);
-                attachRemoteAudioStream(call.remoteAudioStreams[0]).catch(err => log('[attach] error', err));
+            if (Array.isArray(c.remoteAudioStreams) && c.remoteAudioStreams.length) {
+                log('[call] initial remoteAudioStreams.length=', c.remoteAudioStreams.length);
+                attachRemoteAudioStream(c.remoteAudioStreams[0]).catch(err => log('[attach] error', err));
             }
 
-            if (typeof call.on === 'function') {
+            if (typeof c.on === 'function') {
                 try {
-                    call.on('remoteAudioStreamsUpdated', (e) => {
+                    c.on('remoteAudioStreamsUpdated', (e) => {
                         log('[call] remoteAudioStreamsUpdated: added=', e.added?.length || 0, 'removed=', e.removed?.length || 0);
                         if (e.added && e.added.length) {
                             attachRemoteAudioStream(e.added[0]).catch(err => log('[attach] error', err));
@@ -107,8 +107,8 @@ export default function CaptionsPanel(props) {
                     });
                 } catch { }
             }
-        } catch (error) {
-            error(error);
+        } catch (err) {
+            log(err);
         }
     }
 
@@ -173,7 +173,13 @@ export default function CaptionsPanel(props) {
     }
 
     const closeRtc = async () => {
-
+        if (!call) {
+            log('no active call to close');
+            return;
+        }
+        await call.hangUp({ forEveryone: false });
+        setCall(null);
+        audioRef.current.srcObject = null;
     }
 
     return (

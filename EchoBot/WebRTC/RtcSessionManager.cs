@@ -8,50 +8,59 @@ using System.Security;
 
 namespace EchoBot.WebRTC
 {
-    public class RtcSessionManager
+    public class RtcSessionManager(CacheHelper cache, CallAutomationClient automationClient, IConfiguration config, ILogger<RtcSessionManager> logger)
     {
-        private readonly CacheHelper _cache;
+        private readonly CacheHelper _cache = cache;
 
-        private readonly CallAutomationClient _automationClient;
+        private readonly CallAutomationClient _automationClient = automationClient;
 
         private readonly ConcurrentDictionary<string, CallConnection> _callConnDic = new();
 
-        private readonly ILogger _logger;
+        private readonly ILogger _logger = logger;
 
-        private readonly Uri _callback;
+        private readonly Uri _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
 
-        private readonly Uri _cognitiveServicesEndpoint;
+        private readonly Uri _cognitiveServicesEndpoint = new(config["CognitiveServicesEndpoint"]);
 
-        private readonly string _acsConnectionString;
+        private readonly string _acsConnectionString = config["ACSConnectionString"];
 
-        public RtcSessionManager(CacheHelper cache, CallAutomationClient automationClient, IConfiguration config, ILogger<RtcSessionManager> logger)
+        public async Task PlayText(string groupId, string text, string lang, string speakerId)
         {
-            _cache = cache;
-            _automationClient = automationClient;
-            _logger = logger;
+            try
+            {
+                var callConn = await EnsureGroupCallConnectionAsync(groupId);
+                var media = callConn.GetCallMedia();
+                var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
+                var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)))
+                    .Where(p => p.Lang.Equals(lang) && !p.EntraId.Equals(speakerId)).Select(p => p.UserId).ToList();
 
-            _callback = new Uri($"{config["AppBaseUrl"]}/api/acs/callback");
-            _cognitiveServicesEndpoint = new Uri(config["CognitiveServicesEndpoint"]);
-            _acsConnectionString = config["ACSConnectionString"];
-        }
+                var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
+                    .Select(p => p.Identifier).ToList();
 
-        public async Task PlayText(string groupId, string text, string lang, string speakerId, string? voiceName = null)
-        {
-            var callConn = await EnsureGroupCallConnectionAsync(groupId);
-            var media = callConn.GetCallMedia();
-            var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
-            var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)))
-                .Where(p => p.Lang.Equals(lang) && !p.EntraId.Equals(speakerId)).Select(p => p.UserId).ToList();
-            voiceName ??= "zh-CN-XiaoxiaoNeural";
+                if (targets.Count == 0)
+                    return;
 
-            var ssml = $"<speak version=\"1.0\" xml:lang=\"zh-CN\"><voice name=\"{SecurityElement.Escape(voiceName)}\">{SecurityElement.Escape(text)}</voice></speak>";
-            var ssmlSrc = new SsmlSource(ssml);
+                (string locale, string voice) = lang?.ToLowerInvariant() switch
+                {
+                    var l when l.StartsWith("zh") => ("zh-CN", "zh-CN-XiaoxiaoNeural"),
+                    var l when l.StartsWith("ja") => ("ja-JP", "ja-JP-NanamiNeural"),
+                    var l when l.StartsWith("ko") => ("ko-KR", "ko-KR-SunHiNeural"),
+                    var l when l.StartsWith("en") => ("en-US", "en-US-JennyNeural"),
+                    _ => ("en-US", "en-US-JennyNeural")
+                };
 
-            var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
-                .Select(p => p.Identifier).ToList();
-            if (targets.Count == 0)
-                return;
-            await media.PlayAsync(ssmlSrc, targets);
+                var ssml = $"<speak version=\"1.0\" xml:lang=\"{locale}\"><voice name=\"{voice}\">{SecurityElement.Escape(text)}</voice></speak>";
+                var ssmlSrc = new SsmlSource(ssml);
+
+                foreach (var target in targets)
+                {
+                    await media.PlayAsync(ssmlSrc, [target]);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "PlayText to ACS failed");
+            }
         }
 
         public async Task<CallConnection> EnsureGroupCallConnectionAsync(string groupId)

@@ -147,7 +147,8 @@ namespace EchoBot.Media
         {
             var speakerId = _currentSpeakerId;
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-            _logger.LogDebug($"RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={e.Result.Text}");
+
+            _logger.LogDebug("RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={Text}", speakerId, sourceLang, e.Result.Text);
 
             try
             {
@@ -193,7 +194,8 @@ namespace EchoBot.Media
                 if (string.IsNullOrEmpty(original)) return;
 
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
-                _logger.LogDebug($"RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}");
+
+                _logger.LogDebug("RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}", speakerId, sourceLang, original);
 
                 await BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
             }
@@ -281,15 +283,12 @@ namespace EchoBot.Media
         /// </summary>
         private void Start()
         {
-            if (!_isRunning)
-            {
-                _isRunning = true;
-            }
+            if (!_isRunning) { _isRunning = true; }
         }
 
         private async Task TextToSpeech(string text, string lang, string speakerId)
         {
-            await _rtcSessionManager.PlayText(_threadId, text, lang, speakerId);
+            await _rtcSessionManager.PlayText(_threadId, text, lang, speakerId).ConfigureAwait(false);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
@@ -305,7 +304,7 @@ namespace EchoBot.Media
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Translate failed: {ex.Message}");
+                _logger.LogError("Translate failed: {Message}", ex.Message);
             }
         }
 
@@ -374,17 +373,14 @@ namespace EchoBot.Media
         {
             try
             {
-                var tasks = captions
-                    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
-                    .Select(kv => TextToSpeech(kv.Value, kv.Key, speakerId))
-                    .ToArray();
+                var tasks = captions.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                    .Select(kv => TextToSpeech(kv.Value, kv.Key, speakerId)).ToArray();
 
                 if (tasks.Length > 0)
                     await Task.WhenAll(tasks);
             }
             catch (Exception ex)
             {
-                // Log any failures from the parallel synthesis tasks
                 _logger.LogWarning(ex, "One or more TextToSpeech tasks failed.");
             }
         }

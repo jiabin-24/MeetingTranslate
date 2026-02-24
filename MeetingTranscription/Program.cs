@@ -142,7 +142,11 @@ static class Program
         if (builder.Environment.IsDevelopment())
             builder.Configuration.AddDotNetEnv();
         else
-            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential());
+            builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration.GetValue<string>("KeyVaultUri")), new DefaultAzureCredential(
+                new DefaultAzureCredentialOptions
+                {
+                    ManagedIdentityClientId = builder.Configuration.GetValue<string>("VmUserAssignedIdentity:KeyVault")
+                }));
 
         // Adds application configuration settings to specified IServiceCollection.
         builder.Services.AddOptions<AzureSettings>().Configure<IConfiguration>((botOptions, configuration) =>
