@@ -11,15 +11,11 @@ function mergeCaptions(prev, incoming) {
     const isFinal = !!incoming.isFinal;
     const hasWindow = incoming.startMs != null && incoming.endMs != null;
     if (isFinal && hasWindow) {
-        // Simple de-duplication: remove any existing caption that has the same
-        // startMs. This ensures the in-progress
-        // partial (which may have no window) or prior final with slightly different
-        // metadata won't leave a duplicate when the confirmed final arrives.
-        const inStart = incoming.startMs;
-
         const filtered = prev.filter(l => {
-            // If existing has same startMs, drop it (dedupe)
-            return l.startMs !== inStart;
+            if (incoming.speakerId) {
+                return l.speakerId !== incoming.speakerId || l.isFinal === true;
+            }
+            return l.startMs !== incoming.startMs;
         });
 
         const next = sortByTime([...filtered, incoming]);
