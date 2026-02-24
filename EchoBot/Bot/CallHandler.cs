@@ -7,6 +7,7 @@ using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
 using System.Timers;
+using WebSocketSharp;
 
 namespace EchoBot.Bot
 {
@@ -31,7 +32,7 @@ namespace EchoBot.Bot
 
         private readonly CacheHelper _cacheHelper;
 
-        private RtcSessionManager _rtcSessionManager;
+        private readonly RtcSessionManager _rtcSessionManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
@@ -102,7 +103,7 @@ namespace EchoBot.Bot
         /// <param name="participantId">The participant identifier.</param>
         /// <param name="participantDisplayName">Display name of the participant.</param>
         /// <returns>System.String.</returns>
-        private string CreateParticipantUpdateJson(string participantId, string participantDisplayName = "")
+        private static string CreateParticipantUpdateJson(string participantId, string participantDisplayName = "")
         {
             if (participantDisplayName.Length == 0)
                 return "{" + String.Format($"\"Id\": \"{participantId}\"") + "}";
@@ -124,6 +125,9 @@ namespace EchoBot.Bot
             {
                 participants.Add(participant);
                 participant.OnUpdated += async (s, e) => await this.OnParticipantUpdated(s, e);
+
+                if (!string.IsNullOrEmpty(participantDisplayName))
+                    this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
                 await SubscribeToParticipantAudio(participant, forceSubscribe: false);
             }
             else
@@ -178,9 +182,10 @@ namespace EchoBot.Bot
 
             if (this.BotMediaStream.participants.Count == 0)
             {
-                if (!AppConstants.BotMeetingsDictionary.TryRemove(_threadId, out _))
+                if (string.IsNullOrEmpty(await _cacheHelper.GetAsync<string>(CacheConstants.BotMeetingsKey(_threadId))))
                     return;
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
+                await _cacheHelper.DeleteAsync(CacheConstants.BotMeetingsKey(_threadId));
             }
         }
 

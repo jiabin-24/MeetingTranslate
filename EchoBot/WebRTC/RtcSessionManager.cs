@@ -2,6 +2,7 @@
 using Azure.Communication.CallAutomation;
 using Azure.Communication.Identity;
 using Azure.Communication.Rooms;
+using EchoBot.Constants;
 using EchoBot.Util;
 using System.Collections.Concurrent;
 using System.Security;
@@ -34,7 +35,7 @@ namespace EchoBot.WebRTC
 
                 var media = callConn.GetCallMedia();
                 var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
-                var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)))
+                var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)))
                     .Where(p => p.Lang.Equals(lang) && !p.EntraId.Equals(speakerId)).Select(p => p.UserId).ToList();
 
                 var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
@@ -72,7 +73,7 @@ namespace EchoBot.WebRTC
                 return (null, callConnection);
 
             string cachedConnectionId;
-            if (!string.IsNullOrEmpty(cachedConnectionId = await _cache.GetAsync<string>(ConnectKey(groupId))))
+            if (!string.IsNullOrEmpty(cachedConnectionId = await _cache.GetAsync<string>(CacheConstants.AcsConnectKey(groupId))))
             {
                 callConnection = _automationClient.GetCallConnection(cachedConnectionId);
                 _callConnDic.TryAdd(groupId, callConnection);
@@ -80,7 +81,7 @@ namespace EchoBot.WebRTC
             }
 
             string cachedRoomId;
-            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId))))
+            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(groupId))))
                 return ("Room has not been inited", null);
 
             var callLocator = new RoomCallLocator(cachedRoomId);
@@ -96,7 +97,7 @@ namespace EchoBot.WebRTC
             callConnection = _automationClient.GetCallConnection(callConnectionId);
 
             _callConnDic.TryAdd(groupId, callConnection);
-            await _cache.SetAsync(ConnectKey(groupId), TimeSpan.FromHours(2), callConnectionId);
+            await _cache.SetAsync(CacheConstants.AcsConnectKey(groupId), TimeSpan.FromHours(2), callConnectionId);
 
             return (null, callConnection);
         }
@@ -105,7 +106,7 @@ namespace EchoBot.WebRTC
         {
             try
             {
-                var cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId));
+                var cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(groupId));
                 if (string.IsNullOrEmpty(cachedRoomId))
                 {
                     // 如果房间不存在，先创建房间（同时添加参与者），然后返回
@@ -147,7 +148,7 @@ namespace EchoBot.WebRTC
             var response = await roomsClient.CreateRoomAsync(options);
             var roomId = response.Value.Id;
 
-            await _cache.SetAsync(RoomKey(groupId), TimeSpan.FromHours(2), roomId);
+            await _cache.SetAsync(CacheConstants.AcsRoomKey(groupId), TimeSpan.FromHours(2), roomId);
             _logger.LogInformation("Init with ROOM ID: {RoomId}", roomId);
 
             return new Models.Room
@@ -178,25 +179,19 @@ namespace EchoBot.WebRTC
                 Lang = lang
             };
 
-            var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)) ?? []).Union([roomParticipant]);
-            await _cache.SetAsync(RoomParticipantKey(groupId), TimeSpan.FromHours(2), participants);
+            var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)) ?? []).Union([roomParticipant]);
+            await _cache.SetAsync(CacheConstants.AcsRoomParticipantKey(groupId), TimeSpan.FromHours(2), participants);
 
             return (participant, roomParticipant);
         }
 
         public async Task Dispose(string groupId)
         {
-            await _cache.DeleteAsync(ConnectKey(groupId));
-            await _cache.DeleteAsync(RoomKey(groupId));
-            await _cache.DeleteAsync(RoomParticipantKey(groupId));
+            await _cache.DeleteAsync(CacheConstants.AcsConnectKey(groupId));
+            await _cache.DeleteAsync(CacheConstants.AcsRoomKey(groupId));
+            await _cache.DeleteAsync(CacheConstants.AcsRoomParticipantKey(groupId));
 
             _callConnDic.Remove(groupId, out _);
         }
-
-        private static string ConnectKey(string groupId) => $"CallConnectionId_{groupId}";
-
-        private static string RoomKey(string groupId) => $"RoomId_{groupId}";
-
-        private static string RoomParticipantKey(string groupId) => $"RoomParticipantId_{groupId}";
     }
 }

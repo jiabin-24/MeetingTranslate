@@ -3,6 +3,7 @@ using Azure.Identity;
 using EchoBot.Bot;
 using EchoBot.Constants;
 using EchoBot.Models;
+using EchoBot.Util;
 using MeetingTranscription.Helpers;
 using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
@@ -57,6 +58,8 @@ namespace MeetingTranscription.Bots
 
         private readonly ILogger _logger;
 
+        private readonly CacheHelper _cache;
+
         /// <summary>
         /// Creates bot instance.
         /// </summary>
@@ -65,7 +68,7 @@ namespace MeetingTranscription.Bots
         /// <param name="cardFactory">Instance of card factory to create adaptive cards.</param>
         /// <param name="botService">Join bot service</param>
         public TranscriptionBot(IOptions<AzureSettings> azureSettings, IOptions<AIServiceSettings> aiSettingsOpt, ConcurrentDictionary<string, string> transcriptsDictionary,
-            ICardFactory cardFactory, IBotService botService, ILogger<TranscriptionBot> logger)
+            ICardFactory cardFactory, IBotService botService, ILogger<TranscriptionBot> logger, CacheHelper cache)
         {
             _transcriptsDictionary = transcriptsDictionary;
             _azureSettings = azureSettings;
@@ -73,6 +76,7 @@ namespace MeetingTranscription.Bots
             _cardFactory = cardFactory;
             _botService = botService;
             _logger = logger;
+            _cache = cache;
 
             _aiSettings = aiSettingsOpt.Value;
             if (!string.IsNullOrEmpty(_aiSettings?.AgentId))
@@ -200,7 +204,7 @@ namespace MeetingTranscription.Bots
                     JoinUrl = meeting.JoinUrl.ToString()
                 });
 
-                AppConstants.BotMeetingsDictionary.TryAdd(botMeeting!.Resource!.ChatInfo!.ThreadId, 0);
+                await _cache.SetAsync(CacheConstants.BotMeetingsKey(botMeeting!.Resource!.ChatInfo!.ThreadId), TimeSpan.FromHours(3), "0");
             }
             catch (Exception ex)
             {
@@ -226,8 +230,11 @@ namespace MeetingTranscription.Bots
                 _logger.LogInformation($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
                 // End the bot's call in the meeting
-                if (AppConstants.BotMeetingsDictionary.TryRemove(threadId, out _))
+                if (!string.IsNullOrEmpty(await _cache.GetAsync<string>(CacheConstants.BotMeetingsKey(threadId))))
+                {
                     await _botService.EndCallByThreadIdAsync(threadId);
+                    await _cache.DeleteAsync(CacheConstants.BotMeetingsKey(threadId));
+                }
             }
             catch (Exception ex)
             {

@@ -14,7 +14,7 @@ namespace EchoBot.Bot
     /// </summary>
     public class BotMediaStream : ObjectRootDisposable
     {
-        private AppSettings _settings;
+        private readonly AppSettings _settings;
 
         /// <summary>
         /// The participants
@@ -36,7 +36,8 @@ namespace EchoBot.Bot
         private AudioVideoFramePlayerSettings audioVideoFramePlayerSettings;
         private List<AudioMediaBuffer> audioMediaBuffers = [];
         private int shutdown;
-        private readonly SpeechService _languageService;
+
+        public SpeechService LanguageService { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream" /> class.
@@ -53,8 +54,7 @@ namespace EchoBot.Bot
             string threadId,
             IGraphLogger graphLogger,
             AppSettings settings
-        )
-            : base(graphLogger)
+        ) : base(graphLogger)
         {
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
             ArgumentVerifier.ThrowOnNullArgument(settings, nameof(settings));
@@ -62,7 +62,7 @@ namespace EchoBot.Bot
             _settings = settings;
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
 
-            this.participants = new List<IParticipant>();
+            this.participants = [];
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 
@@ -78,8 +78,8 @@ namespace EchoBot.Bot
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            _languageService = new SpeechService(_settings, threadId);
-            _languageService.SendMediaBuffer += this.OnSendMediaBuffer;
+            LanguageService = new SpeechService(_settings, threadId);
+            LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
         /// <summary>
@@ -189,7 +189,7 @@ namespace EchoBot.Bot
                     return;
 
                 var speakerId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
-                await _languageService.AppendAudioBuffer(e.Buffer, speakerId);
+                await LanguageService.AppendAudioBuffer(e.Buffer, speakerId);
             }
             catch (Exception ex)
             {

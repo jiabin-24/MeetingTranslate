@@ -70,6 +70,7 @@ namespace EchoBot.Media
         // per-speaker streams and recognizers
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private SpeechRecognizer _recognizer;
+        private PhraseListGrammar _phraseList;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SpeechService" /> class.
@@ -109,6 +110,9 @@ namespace EchoBot.Media
 
             var audioConfig = AudioConfig.FromStreamInput(_audioInputStream);
             _recognizer = new SpeechRecognizer(_speechConfig, autoDetect, audioConfig);
+
+            _phraseList = PhraseListGrammar.FromRecognizer(_recognizer);
+            _phraseList.SetWeight(1.5);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
@@ -165,6 +169,15 @@ namespace EchoBot.Media
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to publish partial caption");
+            }
+        }
+
+        public void AddPhrases(IEnumerable<string> phrases)
+        {
+            foreach (var p in phrases)
+            {
+                if (!string.IsNullOrWhiteSpace(p))
+                    _phraseList.AddPhrase(p);
             }
         }
 
@@ -343,7 +356,7 @@ namespace EchoBot.Media
                 await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 
                 // For each available caption (language -> text), synthesize speech and publish in parallel
-                await TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+                _ = TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
             }
             catch (Exception ex)
             {
