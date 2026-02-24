@@ -205,7 +205,12 @@ namespace EchoBot.Bot
             }
 
             if (string.Equals(oldSourceId, newSourceId))
-                return;
+            {
+                if (oldIdentity == null)
+                    await _cacheHelper.SetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), newIdentity);
+                else
+                    return;
+            }
 
             await _cacheHelper.DeleteAsync(ParticipantCacheKey(oldSourceId));
             await _cacheHelper.SetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), newIdentity);
