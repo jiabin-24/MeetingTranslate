@@ -1,4 +1,5 @@
-﻿using EchoBot.WebRTC;
+﻿using EchoBot.Models;
+using EchoBot.WebRTC;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EchoBot.Controllers
@@ -17,9 +18,9 @@ namespace EchoBot.Controllers
         }
 
         [HttpPost("addParticipant")]
-        public async Task<IActionResult> AddParticipant(string groupId, string lang, string participantId)
+        public async Task<IActionResult> AddParticipant([FromBody] AddRoomParticipant addRoomParticipant)
         {
-            var roomParticipant = await _rtcSessionManager.AddRoomParticipant(groupId, lang, participantId);
+            var roomParticipant = await _rtcSessionManager.AddRoomParticipant(addRoomParticipant.GroupId, addRoomParticipant.Lang, addRoomParticipant.ParticipantId);
 
             return Ok(roomParticipant);
         }

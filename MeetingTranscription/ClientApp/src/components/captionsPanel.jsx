@@ -60,7 +60,11 @@ export default function CaptionsPanel(props) {
     }, [lines, autoScrollEnabled]);
 
     const connectRtc = async () => {
-        const r = await fetch(`${API_BASE}/api/acs/addParticipant?groupId=${meetingId}&lang=${targetLang}&participantId=${currentUser.id}`, { method: 'POST' });
+        const r = await fetch(`${API_BASE}/api/acs/addParticipant`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId: meetingId, lang: targetLang, participantId: currentUser.id }),
+        });
         const t = await r.json();
 
         roomId = t.roomId;
