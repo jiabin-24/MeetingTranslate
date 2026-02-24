@@ -28,7 +28,10 @@ namespace EchoBot.WebRTC
         {
             try
             {
-                var callConn = await EnsureGroupCallConnectionAsync(groupId);
+                var (_, callConn) = await EnsureGroupCallConnectionAsync(groupId);
+                if (callConn == null)
+                    return;
+
                 var media = callConn.GetCallMedia();
                 var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
                 var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(RoomParticipantKey(groupId)))
@@ -63,22 +66,22 @@ namespace EchoBot.WebRTC
             }
         }
 
-        public async Task<CallConnection> EnsureGroupCallConnectionAsync(string groupId)
+        public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync(string groupId)
         {
             if (_callConnDic.TryGetValue(groupId, out CallConnection callConnection))
-                return callConnection;
+                return (null, callConnection);
 
             string cachedConnectionId;
             if (!string.IsNullOrEmpty(cachedConnectionId = await _cache.GetAsync<string>(ConnectKey(groupId))))
             {
                 callConnection = _automationClient.GetCallConnection(cachedConnectionId);
                 _callConnDic.TryAdd(groupId, callConnection);
-                return callConnection;
+                return (null, callConnection);
             }
 
             string cachedRoomId;
             if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(RoomKey(groupId))))
-                throw new ArgumentException("Room has not been inited");
+                return ("Room has not been inited", null);
 
             var callLocator = new RoomCallLocator(cachedRoomId);
             var connectCallOptions = new ConnectCallOptions(callLocator, _callback)
@@ -95,7 +98,7 @@ namespace EchoBot.WebRTC
             _callConnDic.TryAdd(groupId, callConnection);
             await _cache.SetAsync(ConnectKey(groupId), TimeSpan.FromHours(2), callConnectionId);
 
-            return callConnection;
+            return (null, callConnection);
         }
 
         public async Task<Models.Room> AddRoomParticipant(string groupId, string lang, string participantId)

@@ -11,6 +11,7 @@ export default function CaptionsPanel(props) {
     const containerRef = useRef(null);
     const audioRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
+    const [audioLoading, setAudioLoading] = useState(false);
     const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
     const [viewMode, setViewMode] = useState('both'); // viewMode: 'both' | 'original' | 'translated'
 
@@ -197,6 +198,7 @@ export default function CaptionsPanel(props) {
                         className={`icon-button ${audioEnabled ? 'audio-enabled' : 'audio-disabled'}`}
                         onClick={async () => {
                             try {
+                                setAudioLoading(true);
                                 if (audioEnabled) {
                                     await closeRtc();
                                     setAudioEnabled(false);
@@ -207,27 +209,39 @@ export default function CaptionsPanel(props) {
                                 }
                             } catch (e) {
                                 log('toggle audio failed', e);
+                            } finally {
+                                setAudioLoading(false);
                             }
                         }}
                         aria-pressed={audioEnabled}
                         aria-label={audioEnabled ? 'Disable audio' : 'Enable audio'}
+                        aria-busy={audioLoading}
+                        disabled={audioLoading}
                     >
                         <span className="mic-icon" aria-hidden>
-                            {audioEnabled ? (
-                                <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            {audioLoading ? (
+                                <svg width="18" height="18" viewBox="0 0 50 50" aria-hidden>
+                                    <circle cx="25" cy="25" r="20" fill="none" stroke="#666" strokeWidth="4" strokeLinecap="round" strokeDasharray="31.4 31.4" transform="rotate(-90 25 25)">
+                                        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite" />
+                                    </circle>
                                 </svg>
                             ) : (
-                                <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                    <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M9 21h6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M4 4L20 20" stroke="#B00020" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
+                                audioEnabled ? (
+                                    <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                        <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M19 11a7 7 0 0 1-14 0" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M12 18v3" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M9 21h6" stroke="#1F5FBF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                ) : (
+                                    <svg width="17" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                        <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v4a3 3 0 0 0 3 3z" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M19 11a7 7 0 0 1-14 0" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M12 18v3" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M9 21h6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M4 4L20 20" stroke="#B00020" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                )
                             )}
                         </span>
                     </button>
