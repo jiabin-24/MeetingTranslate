@@ -6,6 +6,7 @@ using MeetingTranscription.Models.Configuration;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
+using Microsoft.CognitiveServices.Speech.Translation;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Skype.Bots.Media;
@@ -61,7 +62,6 @@ namespace EchoBot.Media
         private readonly TranslatorOptions _translatorOptions;
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
-        private readonly SpeechConfig _speechConfig;
         private readonly IHubContext<CaptionSignalRHub> _captionHub;
         private readonly RtcSessionManager _rtcSessionManager;
         private readonly ITranslatorClient _translatorClient;
@@ -69,7 +69,8 @@ namespace EchoBot.Media
         private readonly string _threadId;
         // per-speaker streams and recognizers
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
-        private SpeechRecognizer _recognizer;
+        private readonly SpeechTranslationConfig _speechConfig;
+        private TranslationRecognizer _recognizer;
         private PhraseListGrammar _phraseList;
 
         /// <summary>
@@ -83,12 +84,14 @@ namespace EchoBot.Media
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _threadId = threadId ?? string.Empty;
 
-            _speechConfig = SpeechConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
+            _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
+            _speechConfig.SpeechRecognitionLanguage = "zh-CN";
+            _translatorOptions.Routing.Keys.ForEach(lang => _speechConfig.AddTargetLanguage(lang.Split('-')[0]));
             // 提升识别准确率
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            _speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "150"); // 让断句更短
+            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
+            //_speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
             //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
-            _speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
+            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
             _speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             _speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
             _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
@@ -109,7 +112,7 @@ namespace EchoBot.Media
             var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
 
             var audioConfig = AudioConfig.FromStreamInput(_audioInputStream);
-            _recognizer = new SpeechRecognizer(_speechConfig, autoDetect, audioConfig);
+            _recognizer = new TranslationRecognizer(_speechConfig, audioConfig);
 
             _phraseList = PhraseListGrammar.FromRecognizer(_recognizer);
             _phraseList.SetWeight(1.5);
@@ -117,16 +120,16 @@ namespace EchoBot.Media
             var stopRecognition = new TaskCompletionSource<int>();
 
             // wire events
-            _recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as SpeechRecognizer, e);
-            _recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as SpeechRecognizer, e);
+            _recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as TranslationRecognizer, e);
+            _recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as TranslationRecognizer, e);
             _recognizer.Canceled += (s, e) =>
             {
-                _logger.LogWarning($"CANCELED: Reason={e.Reason}");
+                _logger.LogWarning("CANCELED: Reason={Reason}", e.Reason);
                 if (e.Reason == CancellationReason.Error)
                 {
-                    _logger.LogError($"CANCELED: ErrorCode={e.ErrorCode}");
-                    _logger.LogError($"CANCELED: ErrorDetails={e.ErrorDetails}");
-                    _logger.LogError($"CANCELED: Did you update the subscription info?");
+                    _logger.LogError("CANCELED: ErrorCode={ErrorCode}", e.ErrorCode);
+                    _logger.LogError("CANCELED: ErrorDetails={ErrorDetails}", e.ErrorDetails);
+                    _logger.LogError("CANCELED: Did you update the subscription info?");
                 }
                 stopRecognition.TrySetResult(0);
             };
@@ -147,7 +150,7 @@ namespace EchoBot.Media
             _isDraining = false;
         }
 
-        private async Task Recognizer_Recognizing(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        private async Task Recognizer_Recognizing(TranslationRecognizer? sender, TranslationRecognitionEventArgs e)
         {
             var speakerId = _currentSpeakerId;
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
@@ -163,7 +166,8 @@ namespace EchoBot.Media
                 if (!RecognizingInterval(speakerId, MinIntervalMs))
                     return;
 
-                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } }, sourceLang, partialText);
+                var translations = e.Result.Translations.ToDictionary(k => "zh".Equals(k.Key) ? "zh-Hans" : k.Key, v => v.Value); // 这里做一个特殊处理，后续有更好的办法可以统一语言标签
+                var captions = BuildTextDictionary(translations, sourceLang, partialText);
                 _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, speakerId);
             }
             catch (Exception ex)
@@ -195,13 +199,13 @@ namespace EchoBot.Media
             return true;
         }
 
-        private async Task Recognizer_Recognized(SpeechRecognizer? sender, SpeechRecognitionEventArgs e)
+        private async Task Recognizer_Recognized(TranslationRecognizer? sender, TranslationRecognitionEventArgs e)
         {
             if (sender == null) return;
 
             var speakerId = _currentSpeakerId;
 
-            if (e.Result.Reason == ResultReason.RecognizedSpeech)
+            if (e.Result.Reason == ResultReason.TranslatedSpeech)
             {
                 var original = e.Result.Text;
                 if (string.IsNullOrEmpty(original)) return;
