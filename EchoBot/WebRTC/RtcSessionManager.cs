@@ -56,7 +56,7 @@ namespace EchoBot.WebRTC
                 var ssml =
                 $@"<speak version=""1.0"" xmlns=""http://www.w3.org/2001/10/synthesis"" xml:lang=""{locale}"">
                     <voice name=""{voice}"">
-                        <prosody rate=""1.5"">
+                        <prosody rate=""1.25"">
                             {SecurityElement.Escape(text)}
                         </prosody>
                     </voice>
