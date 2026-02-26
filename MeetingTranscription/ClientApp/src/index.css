@@ -1,6 +1,8 @@
 
+/* Make captions area flexible so it scrolls internally without causing page double-scrollbars */
 .captions {
-  height: 550px;
+  flex: 1 1 auto;
+  min-height: 0; /* critical: allow flex child to shrink and let overflow work */
   overflow-y: auto;
   font: 14px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
         Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -23,6 +25,26 @@
 .language-switcher select {
   padding: 4px;
   border-radius: 5px;
+}
+
+/* Ensure app can use full height so inner flex layouts work */
+html, body, #root {
+  height: 99%;
+}
+
+/* Top-level container that holds language switcher + captions panel */
+.captions-panel-container {
+  display: flex;
+  flex-direction: column;
+  height: 98%;
+}
+
+/* Internal captions panel (controls + captions) should be a column flex so .captions can flex */
+.captions-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Bilingual caption block styles */

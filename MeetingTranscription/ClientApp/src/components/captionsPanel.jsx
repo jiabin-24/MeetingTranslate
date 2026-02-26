@@ -188,7 +188,7 @@ export default function CaptionsPanel(props) {
     }
 
     return (
-        <div>
+        <div className="captions-panel">
             <div className="controls">
                 <div className="view-mode-toggle">
                     <button className={viewMode === 'both' ? 'active' : ''} onClick={() => setViewMode('both')}>Show Both</button>
