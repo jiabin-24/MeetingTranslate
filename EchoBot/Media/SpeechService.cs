@@ -1,4 +1,5 @@
-﻿using EchoBot.Translator;
+﻿using EchoBot.Constants;
+using EchoBot.Translator;
 using EchoBot.Util;
 using EchoBot.WebRTC;
 using EchoBot.WebSocket;
@@ -69,8 +70,8 @@ namespace EchoBot.Media
         private readonly string _threadId;
         // per-speaker streams and recognizers
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
-        private readonly SpeechTranslationConfig _speechConfig;
-        private TranslationRecognizer _recognizer;
+        private readonly ConcurrentDictionary<string, PushAudioInputStream> _audioInputStreamDic = [];
+        private readonly Dictionary<string, TranslationRecognizer> _recognizerDic = [];
         private PhraseListGrammar _phraseList;
 
         /// <summary>
@@ -84,45 +85,35 @@ namespace EchoBot.Media
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _threadId = threadId ?? string.Empty;
 
-            _speechConfig = SpeechTranslationConfig.FromSubscription(settings.SpeechConfigKey, settings.SpeechConfigRegion);
-            _speechConfig.SpeechRecognitionLanguage = "zh-CN";
-            _translatorOptions.Routing.Keys.ForEach(lang => _speechConfig.AddTargetLanguage(lang.Split('-')[0]));
-            // 提升识别准确率
-            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            //_speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
-            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
-            //_speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
-            _speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
-            //_speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
-            _speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
-            _speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "false"); // 始终使用增强模型
-            _speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
-
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 
-        private async Task CreateRecognizerForSpeaker()
+        private async Task CreateRecognizer(string sourceLang)
         {
             // prepare auto-detect config for recognizers
             var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
                 : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
             var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
 
-            var audioConfig = AudioConfig.FromStreamInput(_audioInputStream);
-            _recognizer = new TranslationRecognizer(_speechConfig, audioConfig);
+            var audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
+            var speechConfig = SpeechConfig(sourceLang);
+            var recognizer = new TranslationRecognizer(speechConfig, AudioConfig.FromStreamInput(audioInputStream));
 
-            _phraseList = PhraseListGrammar.FromRecognizer(_recognizer);
+            _recognizerDic[sourceLang] = recognizer;
+            _audioInputStreamDic[sourceLang] = audioInputStream;
+
+            _phraseList = PhraseListGrammar.FromRecognizer(recognizer);
             _phraseList.SetWeight(1.5);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
             // wire events
-            _recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as TranslationRecognizer, e);
-            _recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as TranslationRecognizer, e);
-            _recognizer.Canceled += (s, e) =>
+            recognizer.Recognizing += async (s, e) => await Recognizer_Recognizing(s as TranslationRecognizer, e);
+            recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as TranslationRecognizer, e);
+            recognizer.Canceled += (s, e) =>
             {
                 _logger.LogWarning("CANCELED: Reason={Reason}", e.Reason);
                 if (e.Reason == CancellationReason.Error)
@@ -133,21 +124,40 @@ namespace EchoBot.Media
                 }
                 stopRecognition.TrySetResult(0);
             };
-            _recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
-            _recognizer.SessionStopped += (s, e) =>
+            recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
+            recognizer.SessionStopped += (s, e) =>
             {
                 _logger.LogInformation("Session stopped event.\r\nStop recognition.");
                 stopRecognition.TrySetResult(0);
             };
 
             // start continuous recognition
-            await _recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
+            await recognizer.StartContinuousRecognitionAsync().ConfigureAwait(false);
             Task.WaitAny([stopRecognition.Task]);
 
             // Stops recognition.
-            await _recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
+            await recognizer.StopContinuousRecognitionAsync().ConfigureAwait(false);
 
             _isDraining = false;
+        }
+
+        private SpeechTranslationConfig SpeechConfig(string sourceLang)
+        {
+            var speechConfig = SpeechTranslationConfig.FromSubscription(_appSettings.SpeechConfigKey, _appSettings.SpeechConfigRegion);
+            speechConfig.SpeechRecognitionLanguage = sourceLang;
+            _translatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
+            // 提升识别准确率
+            //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
+            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
+            //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
+            speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
+            speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
+            //speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
+            speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
+            speechConfig.SetProperty("SpeechServiceConnection_AlwaysRequireEnhancedSpeech", "false"); // 始终使用增强模型
+            speechConfig.SetProperty("SpeechServiceResponse_PostProcessingOption", "TrueText"); // 使用 TrueText 后处理
+
+            return speechConfig;
         }
 
         private async Task Recognizer_Recognizing(TranslationRecognizer? sender, TranslationRecognitionEventArgs e)
@@ -166,7 +176,7 @@ namespace EchoBot.Media
                 if (!RecognizingInterval(speakerId, MinIntervalMs))
                     return;
 
-                var translations = e.Result.Translations.ToDictionary(k => "zh".Equals(k.Key) ? "zh-Hans" : k.Key, v => v.Value); // 这里做一个特殊处理，后续有更好的办法可以统一语言标签
+                var translations = e.Result.Translations.ToDictionary(k => AppConstants.LangMap.FirstOrDefault(l => l.Key.StartsWith(k.Key)).Value ?? k.Key, v => v.Value);
                 var captions = BuildTextDictionary(translations, sourceLang, partialText);
                 _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, speakerId);
             }
@@ -176,6 +186,7 @@ namespace EchoBot.Media
             }
         }
 
+        // 添加自定义短语以提升识别准确率
         public void AddPhrases(IEnumerable<string> phrases)
         {
             foreach (var p in phrases)
@@ -228,7 +239,15 @@ namespace EchoBot.Media
             if (!_isRunning)
             {
                 Start();
-                await CreateRecognizerForSpeaker();
+
+                // Create recognizers in parallel to speed up startup
+                var createTasks = new Task[]
+                {
+                    CreateRecognizer("zh-CN"),
+                    CreateRecognizer("en-US")
+                };
+
+                await Task.WhenAll(createTasks).ConfigureAwait(false);
             }
 
             try
@@ -255,7 +274,8 @@ namespace EchoBot.Media
                         }
                     }
 
-                    _audioInputStream.Write(buffer);
+                    _audioInputStreamDic["zh-CN"].Write(buffer);
+                    _audioInputStreamDic["en-US"].Write(buffer);
                 }
             }
             catch (Exception e)
@@ -284,13 +304,20 @@ namespace EchoBot.Media
 
             if (_isRunning)
             {
-                await _recognizer.StopContinuousRecognitionAsync();
-                _recognizer.Dispose();
-                _audioInputStream.Close();
+                foreach (var recognizer in _recognizerDic)
+                {
+                    await recognizer.Value.StopContinuousRecognitionAsync();
+                    recognizer.Value.Dispose();
+                }
+                foreach(var audioInputStream in _audioInputStreamDic)
+                {
+                    audioInputStream.Value.Close();
+                    audioInputStream.Value.Dispose();
+                }
 
+                _audioInputStream.Close();
                 _audioInputStream.Dispose();
                 _audioOutputStream.Dispose();
-
                 _isRunning = false;
             }
         }
@@ -331,6 +358,7 @@ namespace EchoBot.Media
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks，offset 是针对 Speech Regonizer 识别的时差（不能用于多 Regonizer 的线性排序）
             long endMs = startMs + (long)duration.TotalMilliseconds;
             long realStartMs = (DateTime.UtcNow - DateTime.UnixEpoch).Ticks / 10_000;
+            sourceLang = AppConstants.LangMap.TryGetValue(sourceLang, out string? value) ? value : sourceLang.Split('-')[0];
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
             var speaker = await GetParticipant(audioId);
@@ -350,7 +378,7 @@ namespace EchoBot.Media
             try
             {
                 // Send the transcript to the websocket clients
-                await _captionHub.Clients.Group(payload.MeetingId).SendCoreAsync("caption", [payload], default);
+                await _captionHub.Clients.Group($"{payload.MeetingId}").SendCoreAsync("caption", [payload], default);
 
                 if (!isFinal)
                     return;

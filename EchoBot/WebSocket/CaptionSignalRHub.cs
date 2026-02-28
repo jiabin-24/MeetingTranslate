@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace EchoBot.WebSocket
 {
-    public class CaptionSignalRHub : Hub
+    public class CaptionSignalRHub(ILogger<CaptionSignalRHub> logger) : Hub
     {
+        private readonly ILogger<CaptionSignalRHub> _logger = logger;
+
         public async Task Auth(string token)
         {
             if (JwtAuth.ValidateToken(token, out var uid))
@@ -26,7 +28,7 @@ namespace EchoBot.WebSocket
             // remove it before adding the new language group so the connection does not receive audio for the old language.
             try
             {
-                if (Context.Items.ContainsKey("TargetLang") || Context.Items.ContainsKey("MeetingId"))
+                if (Context.Items.ContainsKey("SourceLang") || Context.Items.ContainsKey("TargetLang") || Context.Items.ContainsKey("MeetingId"))
                 {
                     var prevTarget = Context.Items.ContainsKey("TargetLang") ? Context.Items["TargetLang"] as string : null;
                     var prevMeeting = Context.Items.ContainsKey("MeetingId") ? Context.Items["MeetingId"] as string : null;
@@ -43,10 +45,10 @@ namespace EchoBot.WebSocket
             }
             catch
             {
-                // ignore failures to remove old groups
+                _logger.LogWarning("Failed to remove connection {ConnectionId} from previous language group, it might not have been added yet.", Context.ConnectionId);
             }
 
-            await Groups.AddToGroupAsync(Context.ConnectionId, meetingId);
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"{meetingId}");
 
             if (!string.IsNullOrEmpty(targetLang))
             {

@@ -11,14 +11,13 @@ function mergeCaptions(prev, incoming) {
     const isFinal = !!incoming.isFinal;
     const hasWindow = incoming.startMs != null && incoming.endMs != null;
     if (isFinal && hasWindow) {
-        const filtered = prev.filter(l => {
+        let next = sortByTime([...prev, incoming]);
+        next = next.filter(l => {
             if (incoming.speakerId) {
                 return l.speakerId !== incoming.speakerId || l.isFinal === true;
             }
             return l.startMs !== incoming.startMs;
         });
-
-        const next = sortByTime([...filtered, incoming]);
         if (next.length > MAX_CAPTIONS) return next.slice(next.length - MAX_CAPTIONS);
         return next;
     } else {

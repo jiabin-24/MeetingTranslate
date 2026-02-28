@@ -200,8 +200,8 @@ namespace EchoBot.Bot
             if (!this.CallHandlers.TryGetValue(joinParams.ChatInfo.ThreadId!, out CallHandler? call))
             {
                 var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
-                statefulCall.GraphLogger.Info($"Call creation complete: {statefulCall.Id}");
-                _logger.LogInformation($"Call creation complete: {statefulCall.Id}");
+
+                _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
                 await _mux.GetDatabase().KeyDeleteAsync($"list:{joinParams.ChatInfo.ThreadId}");
                 return statefulCall;
             }

@@ -19,9 +19,16 @@ const AppInMeeting = props => {
         });
     }, []);
 
-    const [targetLang, setTargetLang] = useState(() => {
-        return localStorage.getItem('targetLang') || 'zh-Hans';
+    const [sourceLang, setSourceLang] = useState(() => {
+        return localStorage.getItem('sourceLang') || 'zh-Hans';
     });
+    const [targetLang, setTargetLang] = useState(() => {
+        return localStorage.getItem('targetLang') || 'en';
+    });
+
+    useEffect(() => {
+        localStorage.setItem('sourceLang', sourceLang);
+    }, [sourceLang]);
 
     useEffect(() => {
         localStorage.setItem('targetLang', targetLang);
@@ -33,7 +40,12 @@ const AppInMeeting = props => {
     return (
         <div className="captions-panel-container">
             <div className="language-switcher">
-                <span>Translate to</span>
+                <span>Translate from</span>
+                <select value={sourceLang} onChange={e => setSourceLang(e.target.value)}>
+                    <option value="zh-Hans">中文 (Chinese)</option>
+                    <option value="en">English</option>
+                </select>
+                <span>to</span>
                 <select value={targetLang} onChange={e => setTargetLang(e.target.value)}>
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
@@ -43,6 +55,7 @@ const AppInMeeting = props => {
                 <CaptionsPanel
                     url={wsUrl}
                     meetingId={meetingId}
+                    sourceLang={sourceLang}
                     targetLang={targetLang}
                     currentUser={currentUser}
                 />

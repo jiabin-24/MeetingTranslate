@@ -6,8 +6,8 @@ import { API_BASE } from '../config/apiBase';
 
 export default function CaptionsPanel(props) {
 
-    const { url, meetingId, targetLang, currentUser } = props;
-    const { lines } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
+    const { url, meetingId, sourceLang, targetLang, currentUser } = props;
+    const { lines } = useRealtimeCaptions({ url, meetingId, sourceLang, targetLang, currentUser });
     const containerRef = useRef(null);
     const audioRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
@@ -252,7 +252,7 @@ export default function CaptionsPanel(props) {
                 </div>
             </div>
             <div className="captions" ref={containerRef}>
-                {(lines || []).map((l, i) => {
+                {(lines || []).filter(l => !sourceLang || l.sourceLang === sourceLang).map((l, i) => {
                     const rawText = l.text ?? '';
                     const speaker = l.speaker ?? '';
                     const original = rawText[l.sourceLang] ?? rawText.en ?? '';
@@ -262,6 +262,7 @@ export default function CaptionsPanel(props) {
                         <div
                             key={`${l.startMs}-${l.endMs}-${i}`}
                             data-start-ms={l.realStartMs}
+                            data-source-lang={l.sourceLang}
                             data-speaker-id={l.speakerId}
                             className={l.isFinal ? 'caption-block final' : 'caption-block partial'}
                         >
