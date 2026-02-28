@@ -3,6 +3,7 @@ using Azure.Communication.CallAutomation;
 using Azure.Communication.Identity;
 using Azure.Communication.Rooms;
 using EchoBot.Constants;
+using EchoBot.Models;
 using EchoBot.Util;
 using System.Collections.Concurrent;
 using System.Security;
@@ -25,7 +26,7 @@ namespace EchoBot.WebRTC
 
         private readonly string _acsConnectionString = config["ACSConnectionString"];
 
-        public async Task PlayText(string groupId, string text, string lang, string speakerId)
+        public async Task PlayText(string groupId, string text, string lang, string sourceLang, string speakerId)
         {
             try
             {
@@ -33,10 +34,11 @@ namespace EchoBot.WebRTC
                 if (callConn == null)
                     return;
 
-                var media = callConn.GetCallMedia();
                 var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
                 var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)))
-                    .Where(p => p.Lang.Equals(lang) && !p.EntraId.Equals(speakerId)).Select(p => p.UserId).ToList();
+                    .Where(p => p.Lang.Equals(lang) && (string.IsNullOrEmpty(p.SourceLang) || p.SourceLang.Equals(sourceLang)) && !p.EntraId.Equals(speakerId))
+                    .Select(p => p.UserId)
+                    .ToList();
 
                 var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
                     .Select(p => p.Identifier).ToList();
@@ -61,6 +63,8 @@ namespace EchoBot.WebRTC
                         </prosody>
                     </voice>
                 </speak>";
+                
+                var media = callConn.GetCallMedia();
                 var ssmlSrc = new SsmlSource(ssml);
 
                 foreach (var target in targets)
@@ -109,23 +113,23 @@ namespace EchoBot.WebRTC
             return (null, callConnection);
         }
 
-        public async Task<Models.Room> AddRoomParticipant(string groupId, string lang, string participantId)
+        public async Task<Room> AddRoomParticipant(AddRoomParticipant addPar)
         {
             try
             {
-                var cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(groupId));
+                var cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(addPar.GroupId));
                 if (string.IsNullOrEmpty(cachedRoomId))
                 {
                     // 如果房间不存在，先创建房间（同时添加参与者），然后返回
-                    return await InitRoom(groupId, lang, participantId);
+                    return await InitRoom(addPar.GroupId, addPar.Lang, addPar.SourceLang, addPar.ParticipantId);
                 }
 
                 // 房间已存在，直接添加参与者并返回
-                var (participant, user) = await CreateParticipant(groupId, lang, participantId);
+                var (participant, user) = await CreateParticipant(addPar.GroupId, addPar.Lang, addPar.SourceLang, addPar.ParticipantId);
                 var roomsClient = new RoomsClient(_acsConnectionString);
                 await roomsClient.AddOrUpdateParticipantsAsync(cachedRoomId, [participant]);
 
-                return new Models.Room
+                return new Room
                 {
                     RoomId = cachedRoomId,
                     Participants = [user]
@@ -138,11 +142,11 @@ namespace EchoBot.WebRTC
             }
         }
 
-        private async Task<Models.Room> InitRoom(string groupId, string lang, string participantId)
+        private async Task<Room> InitRoom(string groupId, string lang, string sourceLang, string participantId)
         {
             var roomsClient = new RoomsClient(_acsConnectionString);
-            var (participant, user) = await CreateParticipant(groupId, lang, participantId);
-            var roomParticipants = new List<RoomParticipant> { participant };
+            var (participant, user) = await CreateParticipant(groupId, lang, sourceLang, participantId);
+            var roomParticipants = new List<Azure.Communication.Rooms.RoomParticipant> { participant };
 
             var options = new CreateRoomOptions()
             {
@@ -165,7 +169,7 @@ namespace EchoBot.WebRTC
             };
         }
 
-        private async Task<(RoomParticipant, Models.RoomParticipant)> CreateParticipant(string groupId, string lang, string participantId)
+        private async Task<(Azure.Communication.Rooms.RoomParticipant, Models.RoomParticipant)> CreateParticipant(string groupId, string lang, string sourceLang, string participantId)
         {
             var identityClient = new CommunicationIdentityClient(_acsConnectionString);
             var scopes = new List<string> { "chat", "voip" };
@@ -173,7 +177,7 @@ namespace EchoBot.WebRTC
             var user = identityClient.CreateUser().Value;
             var userId = user.RawId;
             var userToken = (await identityClient.GetTokenAsync(user, scopes: scopes.Select(x => new CommunicationTokenScope(x)))).Value;
-            var participant = new RoomParticipant(new CommunicationUserIdentifier(userId))
+            var participant = new Azure.Communication.Rooms.RoomParticipant(new CommunicationUserIdentifier(userId))
             {
                 Role = ParticipantRole.Attendee
             };
@@ -183,7 +187,8 @@ namespace EchoBot.WebRTC
                 UserId = userId,
                 EntraId = participantId,
                 UserToken = userToken.Token,
-                Lang = lang
+                Lang = lang,
+                SourceLang = sourceLang,
             };
 
             var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)) ?? []).Union([roomParticipant]);

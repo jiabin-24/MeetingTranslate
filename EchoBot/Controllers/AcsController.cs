@@ -20,7 +20,7 @@ namespace EchoBot.Controllers
         [HttpPost("addParticipant")]
         public async Task<Room> AddParticipant([FromBody] AddRoomParticipant addRoomParticipant)
         {
-            var roomParticipant = await _rtcSessionManager.AddRoomParticipant(addRoomParticipant.GroupId, addRoomParticipant.Lang, addRoomParticipant.ParticipantId);
+            var roomParticipant = await _rtcSessionManager.AddRoomParticipant(addRoomParticipant);
 
             return roomParticipant;
         }

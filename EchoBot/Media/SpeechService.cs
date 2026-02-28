@@ -336,7 +336,7 @@ namespace EchoBot.Media
             if (!_isRunning) { _isRunning = true; }
         }
 
-        private async Task TextToSpeech(string text, string lang, string speakerId)
+        private async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
         {
             await _rtcSessionManager.PlayText(_threadId, text, lang, speakerId).ConfigureAwait(false);
         }
@@ -394,7 +394,7 @@ namespace EchoBot.Media
                 await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 
                 // For each available caption (language -> text), synthesize speech and publish in parallel
-                _ = TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), speaker.Id);
+                _ = TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), sourceLang, speaker.Id);
             }
             catch (Exception ex)
             {
@@ -420,12 +420,14 @@ namespace EchoBot.Media
             return speaker;
         }
 
-        private async Task TextToSpeechBatch(Dictionary<string, string> captions, string speakerId)
+        private async Task TextToSpeechBatch(Dictionary<string, string> captions, string sourceLang, string speakerId)
         {
             try
             {
-                var tasks = captions.Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
-                    .Select(kv => TextToSpeech(kv.Value, kv.Key, speakerId)).ToArray();
+                var tasks = captions
+                    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                    .Select(kv => TextToSpeech(kv.Value, kv.Key, sourceLang, speakerId))
+                    .ToArray();
 
                 if (tasks.Length > 0)
                     await Task.WhenAll(tasks);

@@ -22,5 +22,7 @@
         public string UserToken { get; set; }
 
         public string Lang { get; set; }
+
+        public string SourceLang { get; set; }
     }
 }

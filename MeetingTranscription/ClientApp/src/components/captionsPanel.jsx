@@ -63,7 +63,7 @@ export default function CaptionsPanel(props) {
         const r = await fetch(`${API_BASE}/api/acs/addParticipant`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ groupId: meetingId, lang: targetLang, participantId: currentUser.id }),
+            body: JSON.stringify({ groupId: meetingId, lang: targetLang, sourceLang: sourceLang, participantId: currentUser.id }),
         });
         const t = await r.json();
 
