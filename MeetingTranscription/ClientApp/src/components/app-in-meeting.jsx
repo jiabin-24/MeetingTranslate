@@ -42,6 +42,7 @@ const AppInMeeting = props => {
             <div className="language-switcher">
                 <span>Translate from</span>
                 <select value={sourceLang} onChange={e => setSourceLang(e.target.value)}>
+                    {/* <option value="">Auto Detect</option> */}
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
                 </select>

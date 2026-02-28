@@ -55,6 +55,8 @@ namespace EchoBot.Media
 
         private string _currentSpeakerId = string.Empty;
 
+        private const string AUTO = "auto";
+
         /// <summary>
         /// The logger
         /// </summary>
@@ -93,14 +95,22 @@ namespace EchoBot.Media
 
         private async Task CreateRecognizer(string sourceLang)
         {
-            // prepare auto-detect config for recognizers
-            var speechEndpoints = _appSettings.CustomSpeechEndpoints.Select(endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
-                : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value)).ToArray();
-            var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs(speechEndpoints);
-
             var audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
             var speechConfig = SpeechConfig(sourceLang);
-            var recognizer = new TranslationRecognizer(speechConfig, AudioConfig.FromStreamInput(audioInputStream));
+            if (_appSettings.CustomSpeechEndpoints.TryGetValue(sourceLang, out string endpoint) && !string.IsNullOrEmpty(endpoint))
+                speechConfig.EndpointId = endpoint;
+
+            TranslationRecognizer recognizer;
+            if (!sourceLang.Equals(AUTO))
+                recognizer = new TranslationRecognizer(speechConfig, AudioConfig.FromStreamInput(audioInputStream));
+            else
+            {
+                // prepare auto-detect config for recognizers
+                var speechEndpoints = _appSettings.CustomSpeechEndpoints.ToDictionary(k => k.Key, endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
+                    : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value));
+                var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs([.. speechEndpoints.Values]);
+                recognizer = new TranslationRecognizer(speechConfig, autoDetect, AudioConfig.FromStreamInput(audioInputStream));
+            }
 
             _recognizerDic[sourceLang] = recognizer;
             _audioInputStreamDic[sourceLang] = audioInputStream;
@@ -144,7 +154,9 @@ namespace EchoBot.Media
         private SpeechTranslationConfig SpeechConfig(string sourceLang)
         {
             var speechConfig = SpeechTranslationConfig.FromSubscription(_appSettings.SpeechConfigKey, _appSettings.SpeechConfigRegion);
-            speechConfig.SpeechRecognitionLanguage = sourceLang;
+            if (!sourceLang.Equals(AUTO))
+                speechConfig.SpeechRecognitionLanguage = sourceLang;
+
             _translatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
             // 提升识别准确率
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
@@ -236,18 +248,12 @@ namespace EchoBot.Media
         /// <param name="speakerId">Optional explicit speaker id to route to.</param>
         public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
+            var sourceLangs = _appSettings.CustomSpeechEndpoints.Keys;
+
             if (!_isRunning)
             {
                 Start();
-
-                // Create recognizers in parallel to speed up startup
-                var createTasks = new Task[]
-                {
-                    CreateRecognizer("zh-CN"),
-                    CreateRecognizer("en-US")
-                };
-
-                await Task.WhenAll(createTasks).ConfigureAwait(false);
+                await Task.WhenAll(sourceLangs.Select(CreateRecognizer)).ConfigureAwait(false);
             }
 
             try
@@ -274,8 +280,8 @@ namespace EchoBot.Media
                         }
                     }
 
-                    _audioInputStreamDic["zh-CN"].Write(buffer);
-                    _audioInputStreamDic["en-US"].Write(buffer);
+                    sourceLangs.ForEach(lang => _audioInputStreamDic[lang].Write(buffer));
+                    //_audioInputStreamDic[AUTO].Write(buffer);
                 }
             }
             catch (Exception e)
@@ -309,7 +315,7 @@ namespace EchoBot.Media
                     await recognizer.Value.StopContinuousRecognitionAsync();
                     recognizer.Value.Dispose();
                 }
-                foreach(var audioInputStream in _audioInputStreamDic)
+                foreach (var audioInputStream in _audioInputStreamDic)
                 {
                     audioInputStream.Value.Close();
                     audioInputStream.Value.Dispose();

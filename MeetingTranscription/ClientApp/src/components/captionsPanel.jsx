@@ -7,7 +7,7 @@ import { API_BASE } from '../config/apiBase';
 export default function CaptionsPanel(props) {
 
     const { url, meetingId, sourceLang, targetLang, currentUser } = props;
-    const { lines } = useRealtimeCaptions({ url, meetingId, sourceLang, targetLang, currentUser });
+    const { lines } = useRealtimeCaptions({ url, meetingId, targetLang, currentUser });
     const containerRef = useRef(null);
     const audioRef = useRef(null);
     const [audioEnabled, setAudioEnabled] = useState(false);
