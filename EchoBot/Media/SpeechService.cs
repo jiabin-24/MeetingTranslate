@@ -338,7 +338,7 @@ namespace EchoBot.Media
 
         private async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
         {
-            await _rtcSessionManager.PlayText(_threadId, text, lang, speakerId).ConfigureAwait(false);
+            await _rtcSessionManager.PlayText(_threadId, text, lang, sourceLang, speakerId).ConfigureAwait(false);
         }
 
         private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
