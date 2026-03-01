@@ -14,7 +14,10 @@
 		<PackageReference Include="Azure.Communication.Identity" Version="1.4.0-beta.1" />
 		<PackageReference Include="Azure.Communication.CallAutomation" Version="1.5.1" />
 		<PackageReference Include="Azure.Communication.Rooms" Version="1.1.1" />
+		<PackageReference Include="Concentus" Version="2.2.2" />
 		<PackageReference Include="DotNetEnv" Version="3.1.1" />
+		<PackageReference Include="Google.Protobuf" Version="3.23.2" />
+		<PackageReference Include="Grpc.Tools" Version="2.57.0" PrivateAssets="All" />
 		<PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
 		<PackageReference Include="Microsoft.Azure.SignalR" Version="1.32.0" />
 		<PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.47.0" />
@@ -28,8 +31,16 @@
 		<PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.15690" />
 		<PackageReference Include="Microsoft.Skype.Bots.Media" Version="1.31.0.225-preview" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
-		<PackageReference Include="Concentus" Version="2.2.2" />
-		<PackageReference Include="SIPSorcery" Version="6.*" />
-		<PackageReference Include="SIPSorceryMedia.Encoders" Version="6.*" />
 	</ItemGroup>
+
+	<ItemGroup>
+	  <Folder Include="Protos\" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Generate C# classes from the repo proto files -->
+		<Protobuf Include="Protos\**\*.proto" GrpcServices="None">
+		  <ProtoRoot>Protos</ProtoRoot>
+		</Protobuf>
+  </ItemGroup>
 </Project>

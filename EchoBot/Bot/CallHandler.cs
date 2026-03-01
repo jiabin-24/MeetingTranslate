@@ -7,7 +7,6 @@ using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
 using System.Timers;
-using WebSocketSharp;
 
 namespace EchoBot.Bot
 {

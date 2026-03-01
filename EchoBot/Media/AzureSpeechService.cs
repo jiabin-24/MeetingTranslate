@@ -23,15 +23,10 @@ using static EchoBot.Models.Caption;
 namespace EchoBot.Media
 {
     /// <summary>
-    /// Class SpeechService.
+    /// Class AzureSpeechService.
     /// </summary>
-    public class SpeechService
+    public class AzureSpeechService : BaseSpeechService
     {
-        /// <summary>
-        /// The is the indicator if the media stream is running
-        /// </summary>
-        private bool _isRunning = false;
-
         /// <summary>
         /// The is draining indicator
         /// </summary>
@@ -46,21 +41,12 @@ namespace EchoBot.Media
 
         private int _placeHolderIndex;
 
-        // Energy threshold (RMS) above which we consider this buffer as active speech for assigning speaker id
-        private const double SpeakerEnergyThreshold = 500.0;
-
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
         private const int MinIntervalMs = 500;
 
-        private string _currentSpeakerId = string.Empty;
-
         private const string AUTO = "auto";
 
-        /// <summary>
-        /// The logger
-        /// </summary>
-        private readonly ILogger _logger;
         private readonly AppSettings _appSettings;
         private readonly TranslatorOptions _translatorOptions;
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
@@ -77,11 +63,10 @@ namespace EchoBot.Media
         private PhraseListGrammar _phraseList;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SpeechService" /> class.
+        /// Initializes a new instance of the <see cref="AzureSpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, string threadId = "")
+        public AzureSpeechService(AppSettings settings, string threadId = "")
         {
-            _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
@@ -125,19 +110,19 @@ namespace EchoBot.Media
             recognizer.Recognized += async (s, e) => await Recognizer_Recognized(s as TranslationRecognizer, e);
             recognizer.Canceled += (s, e) =>
             {
-                _logger.LogWarning("CANCELED: Reason={Reason}", e.Reason);
+                Logger.LogWarning("CANCELED: Reason={Reason}", e.Reason);
                 if (e.Reason == CancellationReason.Error)
                 {
-                    _logger.LogError("CANCELED: ErrorCode={ErrorCode}", e.ErrorCode);
-                    _logger.LogError("CANCELED: ErrorDetails={ErrorDetails}", e.ErrorDetails);
-                    _logger.LogError("CANCELED: Did you update the subscription info?");
+                    Logger.LogError("CANCELED: ErrorCode={ErrorCode}", e.ErrorCode);
+                    Logger.LogError("CANCELED: ErrorDetails={ErrorDetails}", e.ErrorDetails);
+                    Logger.LogError("CANCELED: Did you update the subscription info?");
                 }
                 stopRecognition.TrySetResult(0);
             };
-            recognizer.SessionStarted += async (s, e) => _logger.LogInformation("Session started event.");
+            recognizer.SessionStarted += async (s, e) => Logger.LogInformation("Session started event.");
             recognizer.SessionStopped += (s, e) =>
             {
-                _logger.LogInformation("Session stopped event.\r\nStop recognition.");
+                Logger.LogInformation("Session stopped event.\r\nStop recognition.");
                 stopRecognition.TrySetResult(0);
             };
 
@@ -160,9 +145,8 @@ namespace EchoBot.Media
             _translatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
             // 提升识别准确率
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
+            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "300"); // 让断句更短
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
-            speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
             speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             //speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
             speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型
@@ -174,10 +158,10 @@ namespace EchoBot.Media
 
         private async Task Recognizer_Recognizing(TranslationRecognizer? sender, TranslationRecognitionEventArgs e)
         {
-            var speakerId = _currentSpeakerId;
+            var speakerId = CurrentSpeakerId;
             var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
 
-            _logger.LogDebug("RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={Text}", speakerId, sourceLang, e.Result.Text);
+            Logger.LogDebug("RECOGNIZING (speaker={speakerId}) in '{sourceLang}': Text={Text}", speakerId, sourceLang, e.Result.Text);
 
             try
             {
@@ -194,12 +178,12 @@ namespace EchoBot.Media
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to publish partial caption");
+                Logger.LogWarning(ex, "Failed to publish partial caption");
             }
         }
 
         // 添加自定义短语以提升识别准确率
-        public void AddPhrases(IEnumerable<string> phrases)
+        public override void AddPhrases(IEnumerable<string> phrases)
         {
             foreach (var p in phrases)
             {
@@ -226,7 +210,7 @@ namespace EchoBot.Media
         {
             if (sender == null) return;
 
-            var speakerId = _currentSpeakerId;
+            var speakerId = CurrentSpeakerId;
 
             if (e.Result.Reason == ResultReason.TranslatedSpeech)
             {
@@ -235,7 +219,7 @@ namespace EchoBot.Media
 
                 var sourceLang = e.Result.Properties.GetProperty(PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult);
 
-                _logger.LogDebug("RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}", speakerId, sourceLang, original);
+                Logger.LogDebug("RECOGNIZED (speaker={speakerId}) in '{sourceLang}': Text={original}", speakerId, sourceLang, original);
 
                 await BatchTranslateAsync(original, sourceLang, e.Offset, e.Result.Duration, speakerId);
             }
@@ -246,11 +230,11 @@ namespace EchoBot.Media
         /// </summary>
         /// <param name="audioBuffer"></param>
         /// <param name="speakerId">Optional explicit speaker id to route to.</param>
-        public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
+        public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
             var sourceLangs = _appSettings.CustomSpeechEndpoints.Keys;
 
-            if (!_isRunning)
+            if (!IsRunning)
             {
                 Start();
                 await Task.WhenAll(sourceLangs.Select(CreateRecognizer)).ConfigureAwait(false);
@@ -264,21 +248,7 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    if (speakerId != null)
-                    {
-                        // Compute buffer energy (RMS) for 16-bit PCM and only assign speaker when above threshold
-                        try
-                        {
-                            var rms = ComputeRmsFrom16BitPcm(buffer, bufferLength);
-                            if (rms >= SpeakerEnergyThreshold)
-                                _currentSpeakerId = speakerId;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogDebug(ex, "Failed to compute audio energy, assigning speaker id by default");
-                            _currentSpeakerId = speakerId;
-                        }
-                    }
+                    SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
                     sourceLangs.ForEach(lang => _audioInputStreamDic[lang].Write(buffer));
                     //_audioInputStreamDic[AUTO].Write(buffer);
@@ -286,29 +256,19 @@ namespace EchoBot.Media
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Exception happend writing to input stream");
+                Logger.LogError(e, "Exception happend writing to input stream");
             }
         }
-
-        public virtual void OnSendMediaBufferEventArgs(object sender, MediaStreamEventArgs e)
-        {
-            SendMediaBuffer?.Invoke(this, e);
-        }
-
-        public event EventHandler<MediaStreamEventArgs> SendMediaBuffer;
 
         /// <summary>
         /// Ends this instance.
         /// </summary>
         /// <returns>Task.</returns>
-        public async Task ShutDownAsync()
+        public override async Task ShutDownAsync()
         {
-            if (!_isRunning)
-            {
-                return;
-            }
+            if (!IsRunning) return;
 
-            if (_isRunning)
+            if (IsRunning)
             {
                 foreach (var recognizer in _recognizerDic)
                 {
@@ -324,7 +284,7 @@ namespace EchoBot.Media
                 _audioInputStream.Close();
                 _audioInputStream.Dispose();
                 _audioOutputStream.Dispose();
-                _isRunning = false;
+                IsRunning = false;
             }
         }
 
@@ -333,7 +293,7 @@ namespace EchoBot.Media
         /// </summary>
         private void Start()
         {
-            if (!_isRunning) { _isRunning = true; }
+            if (!IsRunning) { IsRunning = true; }
         }
 
         private async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
@@ -354,7 +314,7 @@ namespace EchoBot.Media
             }
             catch (Exception ex)
             {
-                _logger.LogError("Translate failed: {Message}", ex.Message);
+                Logger.LogError("Translate failed: {Message}", ex.Message);
             }
         }
 
@@ -398,7 +358,7 @@ namespace EchoBot.Media
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Transcript and send error");
+                Logger.LogError(ex, "Transcript and send error");
             }
         }
 
@@ -434,7 +394,7 @@ namespace EchoBot.Media
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "One or more TextToSpeech tasks failed.");
+                Logger.LogWarning(ex, "One or more TextToSpeech tasks failed.");
             }
         }
 
@@ -450,29 +410,6 @@ namespace EchoBot.Media
                     dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
-        }
-
-        // Compute RMS energy from a 16-bit PCM buffer
-        private static double ComputeRmsFrom16BitPcm(byte[] buffer, long bufferLength)
-        {
-            if (buffer == null || bufferLength <= 1) return 0.0;
-
-            long sampleCount = bufferLength / 2; // 16-bit samples
-            if (sampleCount == 0) return 0.0;
-
-            double sumSquares = 0.0;
-
-            for (long i = 0; i < sampleCount; i++)
-            {
-                int offset = (int)(i * 2);
-                short sample = (short)(buffer[offset] | (buffer[offset + 1] << 8));
-                double normalized = sample; // keep in int16 domain to compute RMS
-                sumSquares += normalized * normalized;
-            }
-
-            double meanSquares = sumSquares / sampleCount;
-            double rms = Math.Sqrt(meanSquares);
-            return rms;
         }
     }
 }

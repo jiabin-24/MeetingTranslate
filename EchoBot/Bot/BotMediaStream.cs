@@ -37,7 +37,7 @@ namespace EchoBot.Bot
         private List<AudioMediaBuffer> audioMediaBuffers = [];
         private int shutdown;
 
-        public SpeechService LanguageService { get; private set; }
+        public BaseSpeechService LanguageService { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream" /> class.
@@ -67,18 +67,14 @@ namespace EchoBot.Bot
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 
             // Subscribe to the audio media.
-            this._audioSocket = mediaSession.AudioSocket;
-            if (this._audioSocket == null)
-            {
-                throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
-            }
-
+            this._audioSocket = mediaSession.AudioSocket ?? throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
             var ignoreTask = this.StartAudioVideoFramePlayerAsync().ForgetAndLogExceptionAsync(this.GraphLogger, "Failed to start the player");
 
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            LanguageService = new SpeechService(_settings, threadId);
+            LanguageService = new AzureSpeechService(_settings, threadId);
+            //LanguageService = new ByteDanceSpeechService();
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
@@ -123,9 +119,10 @@ namespace EchoBot.Bot
                 audioMediaBuffer.Dispose();
             }
 
-            _logger.LogInformation($"disposed {this.audioMediaBuffers.Count} audioMediaBUffers.");
+            _logger.LogInformation("disposed {Count} audioMediaBUffers.", this.audioMediaBuffers.Count);
 
             this.audioMediaBuffers.Clear();
+            await LanguageService.ShutDownAsync().ConfigureAwait(false);
         }
 
         /// <summary>
