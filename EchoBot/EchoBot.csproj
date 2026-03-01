@@ -22,7 +22,7 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Logging.ApplicationInsights" Version="2.23.0" />
-		<PackageReference Include="Microsoft.Graph" Version="5.92.0" />
+		<PackageReference Include="Microsoft.Graph" Version="5.100.0" />
 		<PackageReference Include="Microsoft.Kiota.Http.HttpClientLibrary" Version="1.17.1" />
 		<PackageReference Include="Microsoft.SemanticKernel.Agents.AzureAI" Version="1.68.0-preview" />
 		<PackageReference Include="Microsoft.Graph.Communications.Calls.Media" Version="1.2.0.15690" />
