@@ -67,12 +67,7 @@ namespace EchoBot.Bot
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 
             // Subscribe to the audio media.
-            this._audioSocket = mediaSession.AudioSocket;
-            if (this._audioSocket == null)
-            {
-                throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
-            }
-
+            this._audioSocket = mediaSession.AudioSocket ?? throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
             var ignoreTask = this.StartAudioVideoFramePlayerAsync().ForgetAndLogExceptionAsync(this.GraphLogger, "Failed to start the player");
 
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
