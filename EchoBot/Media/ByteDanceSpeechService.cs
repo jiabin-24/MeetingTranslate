@@ -45,12 +45,12 @@ namespace EchoBot.Media
             if (!IsRunning)
             {
                 // If another caller already set _starting to 1, drop this call.
-                if (System.Threading.Interlocked.CompareExchange(ref _starting, 1, 0) != 0)
+                if (Interlocked.CompareExchange(ref _starting, 1, 0) != 0)
                     return;
 
                 await Start();
             }
-            
+
             try
             {
                 var bufferLength = audioBuffer.Length;
@@ -59,8 +59,6 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    //if (!SetCurrentSpeaker(speakerId, buffer, bufferLength))
-                    //    return;
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
                     var total = (int)bufferLength;
@@ -137,8 +135,7 @@ namespace EchoBot.Media
                 Event = EV.Type.StartSession,
                 User = new User { Uid = UID, Did = UID },
                 // Teams sends raw PCM 16-bit little-endian samples (not a WAV file with RIFF header).
-                // Report the source audio format as PCM so the remote service treats the binary
-                // frames as raw PCM samples.
+                // Report the source audio format as PCM so the remote service treats the binary frames as raw PCM samples.
                 SourceAudio = new Audio { Format = "pcm", Rate = 16000, Bits = 16, Channel = 1 },
                 TargetAudio = new Audio { Format = "ogg_opus", Rate = 48000 },
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = "zh", TargetLanguage = "en" }
@@ -233,9 +230,15 @@ namespace EchoBot.Media
                                 await _recvAudio.WriteAsync(resp.Data.ToByteArray());
                             }
                             if (!string.IsNullOrEmpty(resp.Text) && resp.Event == EV.Type.SourceSubtitleResponse)
+                            {
                                 sourceText.Append(resp.Text);
+                                Logger.LogInformation(resp.Text);
+                            }
                             if (!string.IsNullOrEmpty(resp.Text) && resp.Event == EV.Type.TranslationSubtitleResponse)
+                            {
                                 targetText.Append(resp.Text);
+                                //Logger.LogInformation(resp.Text);
+                            }
                         }
                     }
                     catch (Exception ex)
