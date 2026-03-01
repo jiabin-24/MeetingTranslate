@@ -1,8 +1,9 @@
 ﻿using EchoBot.Util;
+using Microsoft.Skype.Bots.Media;
 
 namespace EchoBot.Media
 {
-    public class BaseSpeechService
+    public abstract class BaseSpeechService
     {
         /// <summary>
         /// The is the indicator if the media stream is running
@@ -20,6 +21,19 @@ namespace EchoBot.Media
         public BaseSpeechService()
         {
             Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
+        }
+
+        public abstract Task ShutDownAsync();
+
+        public abstract Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId);
+
+        public abstract void AddPhrases(IEnumerable<string> phrases);
+
+        public event EventHandler<MediaStreamEventArgs> SendMediaBuffer;
+
+        public virtual void OnSendMediaBufferEventArgs(object sender, MediaStreamEventArgs e)
+        {
+            SendMediaBuffer?.Invoke(this, e);
         }
 
         // Compute RMS energy from a 16-bit PCM buffer
@@ -45,7 +59,7 @@ namespace EchoBot.Media
             return rms;
         }
 
-        protected void SetCurrentSpeaker(string speakerId, byte[]? buffer, long bufferLength)
+        protected bool SetCurrentSpeaker(string speakerId, byte[]? buffer, long bufferLength)
         {
             if (speakerId != null)
             {
@@ -55,6 +69,8 @@ namespace EchoBot.Media
                     var rms = ComputeRmsFrom16BitPcm(buffer, bufferLength);
                     if (rms >= SpeakerEnergyThreshold)
                         CurrentSpeakerId = speakerId;
+
+                    return rms >= SpeakerEnergyThreshold;
                 }
                 catch (Exception ex)
                 {
@@ -62,6 +78,7 @@ namespace EchoBot.Media
                     CurrentSpeakerId = speakerId;
                 }
             }
+            return false;
         }
     }
 }

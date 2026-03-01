@@ -183,7 +183,7 @@ namespace EchoBot.Media
         }
 
         // 添加自定义短语以提升识别准确率
-        public void AddPhrases(IEnumerable<string> phrases)
+        public override void AddPhrases(IEnumerable<string> phrases)
         {
             foreach (var p in phrases)
             {
@@ -230,7 +230,7 @@ namespace EchoBot.Media
         /// </summary>
         /// <param name="audioBuffer"></param>
         /// <param name="speakerId">Optional explicit speaker id to route to.</param>
-        public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
+        public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
             var sourceLangs = _appSettings.CustomSpeechEndpoints.Keys;
 
@@ -260,18 +260,11 @@ namespace EchoBot.Media
             }
         }
 
-        public virtual void OnSendMediaBufferEventArgs(object sender, MediaStreamEventArgs e)
-        {
-            SendMediaBuffer?.Invoke(this, e);
-        }
-
-        public event EventHandler<MediaStreamEventArgs> SendMediaBuffer;
-
         /// <summary>
         /// Ends this instance.
         /// </summary>
         /// <returns>Task.</returns>
-        public async Task ShutDownAsync()
+        public override async Task ShutDownAsync()
         {
             if (!IsRunning) return;
 

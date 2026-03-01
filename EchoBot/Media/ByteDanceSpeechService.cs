@@ -31,16 +31,26 @@ namespace EchoBot.Media
 
         private const string UID = "ast_csharp_client";
 
+        // 0 = not starting, 1 = starting/in-progress
+        private int _starting = 0;
+
         public ByteDanceSpeechService()
         {
             _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
         }
 
-        public async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
+        public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
+            // If not running, ensure only the first caller triggers Start().
             if (!IsRunning)
-                await Start();
+            {
+                // If another caller already set _starting to 1, drop this call.
+                if (System.Threading.Interlocked.CompareExchange(ref _starting, 1, 0) != 0)
+                    return;
 
+                await Start();
+            }
+            
             try
             {
                 var bufferLength = audioBuffer.Length;
@@ -49,33 +59,25 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
+                    //if (!SetCurrentSpeaker(speakerId, buffer, bufferLength))
+                    //    return;
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
-                    //sourceLangs.ForEach(lang => _audioInputStreamDic[lang].Write(buffer));
-                    //_audioInputStreamDic[AUTO].Write(buffer);
-                }
-            }
-            catch (Exception e)
-            {
-                Logger.LogError(e, "Exception happend writing to input stream");
-            }
-
-            // Send audio chunks
-            try
-            {
-                using var fs = File.OpenRead("audioFile");
-                var buffer = new byte[ChunkSize];
-                int read;
-                while ((read = await fs.ReadAsync(buffer, 0, buffer.Length)) > 0 && _wsClient.State == WebSocketState.Open && !_sessionEnded.Task.IsCompleted)
-                {
-                    var chunkReq = new TranslateRequest
+                    var total = (int)bufferLength;
+                    var offset = 0;
+                    while (offset < total && _wsClient.State == WebSocketState.Open && !_sessionEnded.Task.IsCompleted)
                     {
-                        RequestMeta = new RequestMeta { SessionID = _sessionId },
-                        Event = EV.Type.TaskRequest,
-                        SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(buffer, 0, read) }
-                    };
-                    await _wsClient.SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
-                    await Task.Delay(10);
+                        var toSend = Math.Min(ChunkSize, total - offset);
+                        var chunkReq = new TranslateRequest
+                        {
+                            RequestMeta = new RequestMeta { SessionID = _sessionId },
+                            Event = EV.Type.TaskRequest,
+                            SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(buffer, offset, toSend) }
+                        };
+                        await _wsClient.SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
+                        offset += toSend;
+                        await Task.Delay(10);
+                    }
                 }
             }
             catch (Exception e)
@@ -134,7 +136,10 @@ namespace EchoBot.Media
                 RequestMeta = new RequestMeta { SessionID = sessionId },
                 Event = EV.Type.StartSession,
                 User = new User { Uid = UID, Did = UID },
-                SourceAudio = new Audio { Format = "wav", Rate = 16000, Bits = 16, Channel = 1 },
+                // Teams sends raw PCM 16-bit little-endian samples (not a WAV file with RIFF header).
+                // Report the source audio format as PCM so the remote service treats the binary
+                // frames as raw PCM samples.
+                SourceAudio = new Audio { Format = "pcm", Rate = 16000, Bits = 16, Channel = 1 },
                 TargetAudio = new Audio { Format = "ogg_opus", Rate = 48000 },
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = "zh", TargetLanguage = "en" }
             };
@@ -187,15 +192,15 @@ namespace EchoBot.Media
                     {
                         var resp = TranslateResponse.Parser.ParseFrom(data);
                         var eventType = resp.Event;
-                        Logger.LogInformation("Received event: " + eventType);
+
                         if (eventType == EV.Type.SessionStarted)
                         {
                             _handshakeDone.TrySetResult(true);
-                            Logger.LogInformation($"Session (ID={sessionId}) started.");
+                            Logger.LogInformation("Session (ID={sessionId}) started.", sessionId);
                         }
                         else if (eventType == EV.Type.SessionFailed)
                         {
-                            Logger.LogInformation($"Session failed: {resp.ResponseMeta?.StatusCode} {resp.ResponseMeta?.Message}");
+                            Logger.LogInformation("Session failed: {StatusCode} {Message}", resp.ResponseMeta?.StatusCode, resp.ResponseMeta?.Message);
                             _sessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.SessionCanceled)
@@ -244,6 +249,20 @@ namespace EchoBot.Media
                 Logger.LogError(e, "Receiver error");
                 _sessionEnded.TrySetResult(true);
             }
+        }
+
+        public override void AddPhrases(IEnumerable<string> phrases)
+        {
+            foreach (var p in phrases)
+            {
+                if (!string.IsNullOrWhiteSpace(p))
+                    Logger.LogInformation(p);
+            }
+        }
+
+        public override async Task ShutDownAsync()
+        {
+            await FinishSession(_sessionId);
         }
     }
 }

@@ -37,7 +37,7 @@ namespace EchoBot.Bot
         private List<AudioMediaBuffer> audioMediaBuffers = [];
         private int shutdown;
 
-        public AzureSpeechService LanguageService { get; private set; }
+        public BaseSpeechService LanguageService { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream" /> class.
@@ -74,6 +74,7 @@ namespace EchoBot.Bot
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
             LanguageService = new AzureSpeechService(_settings, threadId);
+            //LanguageService = new ByteDanceSpeechService();
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
@@ -118,9 +119,10 @@ namespace EchoBot.Bot
                 audioMediaBuffer.Dispose();
             }
 
-            _logger.LogInformation($"disposed {this.audioMediaBuffers.Count} audioMediaBUffers.");
+            _logger.LogInformation("disposed {Count} audioMediaBUffers.", this.audioMediaBuffers.Count);
 
             this.audioMediaBuffers.Clear();
+            await LanguageService.ShutDownAsync().ConfigureAwait(false);
         }
 
         /// <summary>
