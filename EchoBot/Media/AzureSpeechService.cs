@@ -25,7 +25,7 @@ namespace EchoBot.Media
     /// <summary>
     /// Class SpeechService.
     /// </summary>
-    public class SpeechService
+    public class AzureSpeechService
     {
         /// <summary>
         /// The is the indicator if the media stream is running
@@ -77,11 +77,11 @@ namespace EchoBot.Media
         private PhraseListGrammar _phraseList;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SpeechService" /> class.
+        /// Initializes a new instance of the <see cref="AzureSpeechService" /> class.
         /// </summary>
-        public SpeechService(AppSettings settings, string threadId = "")
+        public AzureSpeechService(AppSettings settings, string threadId = "")
         {
-            _logger = ServiceLocator.GetRequiredService<ILogger<SpeechService>>();
+            _logger = ServiceLocator.GetRequiredService<ILogger<AzureSpeechService>>();
             _appSettings = settings;
             _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
@@ -160,9 +160,8 @@ namespace EchoBot.Media
             _translatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
             // 提升识别准确率
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
+            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "300"); // 让断句更短
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
-            speechConfig.SetProperty(PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "200"); // 一句话末尾静音到这个超时就判定结束（可进一步加快落句）
             speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             //speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率
             speechConfig.SetProperty("SpeechServiceConnection_RecoModelType", "Enhanced"); // 使用增强模型

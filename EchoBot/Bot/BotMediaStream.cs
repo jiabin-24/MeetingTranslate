@@ -37,7 +37,7 @@ namespace EchoBot.Bot
         private List<AudioMediaBuffer> audioMediaBuffers = [];
         private int shutdown;
 
-        public SpeechService LanguageService { get; private set; }
+        public AzureSpeechService LanguageService { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream" /> class.
@@ -78,7 +78,7 @@ namespace EchoBot.Bot
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            LanguageService = new SpeechService(_settings, threadId);
+            LanguageService = new AzureSpeechService(_settings, threadId);
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
