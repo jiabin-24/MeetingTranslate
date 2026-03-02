@@ -3,6 +3,7 @@ using Azure.Communication.Identity;
 using Azure.Identity;
 using DotNetEnv.Configuration;
 using EchoBot;
+using EchoBot.Models.Configuration;
 using EchoBot.Util;
 using EchoBot.WebRTC;
 using EchoBot.WebSocket;
@@ -164,6 +165,7 @@ static class Program
 
         builder.Services.AddOptions<AIServiceSettings>().BindConfiguration(nameof(AIServiceSettings));
         builder.Services.AddOptions<TranslatorOptions>().BindConfiguration("Translator");
+        builder.Services.AddOptions<ByteDanceSettings>().BindConfiguration("ByteDanceSettings");
     }
 
     private static void BuildCache(WebApplicationBuilder builder)

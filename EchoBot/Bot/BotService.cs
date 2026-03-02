@@ -302,7 +302,7 @@ namespace EchoBot.Bot
             foreach (var call in args.AddedResources)
             {
                 var threadId = call.Resource.ChatInfo.ThreadId!;
-                var callHandler = new CallHandler(call, _settings);
+                var callHandler = new CallHandler(call);
                 this.CallHandlers[threadId] = callHandler;
             }
 
