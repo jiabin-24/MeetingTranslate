@@ -34,7 +34,15 @@ namespace EchoBot.Media
         // 0 = not starting, 1 = starting/in-progress
         private int _starting = 0;
 
-        public ByteDanceSpeechService()
+        private readonly string _sourceLang = "zh-CN";
+
+        private readonly Dictionary<string, string> _translateTarget = new()
+        {
+            {"zh-CN","en" },
+            {"en-US","zh" }
+        };
+
+        public ByteDanceSpeechService(string threadId) : base(threadId)
         {
             _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
         }
@@ -138,7 +146,7 @@ namespace EchoBot.Media
                 // Report the source audio format as PCM so the remote service treats the binary frames as raw PCM samples.
                 SourceAudio = new Audio { Format = "pcm", Rate = 16000, Bits = 16, Channel = 1 },
                 TargetAudio = new Audio { Format = "ogg_opus", Rate = 48000 },
-                Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = "zh", TargetLanguage = "en" }
+                Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = _sourceLang.Split('-')[0], TargetLanguage = _translateTarget[_sourceLang] }
             };
             await _wsClient.SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
             Logger.LogInformation("StartSession sent");
@@ -162,9 +170,9 @@ namespace EchoBot.Media
 
         private async Task ReceiveMessage(string sessionId)
         {
-            var sourceText = new StringBuilder();
-            var targetText = new StringBuilder();
             var buffer = new byte[64 * 1024];
+            var sourceText = new StringBuilder();
+            var tranlatedText = new StringBuilder();
 
             try
             {
@@ -197,47 +205,52 @@ namespace EchoBot.Media
                         }
                         else if (eventType == EV.Type.SessionFailed)
                         {
-                            Logger.LogInformation("Session failed: {StatusCode} {Message}", resp.ResponseMeta?.StatusCode, resp.ResponseMeta?.Message);
+                            Logger.LogWarning("Session failed: {StatusCode} {Message}", resp.ResponseMeta?.StatusCode, resp.ResponseMeta?.Message);
                             _sessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.SessionCanceled)
                         {
-                            Logger.LogInformation("Session canceled");
+                            Logger.LogWarning("Session canceled");
                             _sessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.SessionFinished)
                         {
                             Logger.LogInformation("Session finished");
-                            if (_recvAudio.Length > 0)
-                            {
-                                var audioPath = Path.Combine(".", $"v4_translate_audio_{sessionId}.opus");
-                                await File.WriteAllBytesAsync(audioPath, _recvAudio.ToArray());
-                                Logger.LogInformation("Saved audio: " + audioPath);
-                                Logger.LogInformation("Source Text: " + sourceText.ToString());
-                                Logger.LogInformation("Target Text: " + targetText.ToString());
-                            }
-                            else
-                            {
-                                Logger.LogWarning("Session finished, no audio received.");
-                            }
                             _sessionEnded.TrySetResult(true);
+                        }
+                        else if (eventType == EV.Type.TranslationSubtitleEnd)
+                        {
+                            // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
+                            var original = sourceText.ToString();
+                            var transleted = tranlatedText.ToString();
+
+                            if (string.IsNullOrEmpty(original)) return;
+
+                            Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", _sourceLang, original);
+                            await BatchTranslateAsync(original, _sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId);
+
+                            sourceText.Clear();
+                            tranlatedText.Clear();
                         }
                         else
                         {
-                            // Regular data/partial
-                            if (resp.Data != null)
+                            // Regular data/partial (Recognizing)
+                            var speakerId = CurrentSpeakerId;
+                            if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
-                                await _recvAudio.WriteAsync(resp.Data.ToByteArray());
+                                (resp.Event == EV.Type.SourceSubtitleResponse ? sourceText : tranlatedText).Append(resp.Text);
                             }
-                            if (!string.IsNullOrEmpty(resp.Text) && resp.Event == EV.Type.SourceSubtitleResponse)
+
+                            if (resp.Event == EV.Type.TranslationSubtitleResponse)
                             {
-                                sourceText.Append(resp.Text);
-                                Logger.LogInformation(resp.Text);
-                            }
-                            if (!string.IsNullOrEmpty(resp.Text) && resp.Event == EV.Type.TranslationSubtitleResponse)
-                            {
-                                targetText.Append(resp.Text);
-                                //Logger.LogInformation(resp.Text);
+                                var partialText = sourceText.ToString();
+                                var translatedText = tranlatedText.ToString();
+                                var captions = BuildTextDictionary(new Dictionary<string, string> { { _sourceLang, partialText }, { _translateTarget[_sourceLang], translatedText } },
+                                    _sourceLang, partialText);
+
+                                Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", _sourceLang, partialText);
+
+                                _ = Transcript(captions, false, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), _sourceLang, partialText, speakerId);
                             }
                         }
                     }

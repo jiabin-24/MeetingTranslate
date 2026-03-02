@@ -1,45 +1,29 @@
 ﻿using EchoBot.Constants;
-using EchoBot.Translator;
-using EchoBot.Util;
-using EchoBot.WebRTC;
-using EchoBot.WebSocket;
-using MeetingTranscription.Models.Configuration;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.CognitiveServices.Speech.Translation;
-using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Skype.Bots.Media;
-using Newtonsoft.Json;
 using Sprache;
 using StackExchange.Redis;
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
-using static EchoBot.Models.Caption;
 
 namespace EchoBot.Media
 {
     /// <summary>
     /// Class AzureSpeechService.
     /// </summary>
-    public class AzureSpeechService : BaseSpeechService
+    /// <remarks>
+    /// Initializes a new instance of the <see cref="AzureSpeechService" /> class.
+    /// </remarks>
+    public class AzureSpeechService(AppSettings settings, string threadId) : BaseSpeechService(threadId)
     {
         /// <summary>
         /// The is draining indicator
         /// </summary>
         protected bool _isDraining;
-
-        private readonly CacheHelper _cacheHelper;
-
-        // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
-
-        private int _readFromInstanceTimes = 0;
-
-        private int _placeHolderIndex;
 
         // 每个流（key）上次发送的时间戳（毫秒）
         private static readonly ConcurrentDictionary<string, long> _lastSentAtMs = new();
@@ -47,42 +31,21 @@ namespace EchoBot.Media
 
         private const string AUTO = "auto";
 
-        private readonly AppSettings _appSettings;
-        private readonly TranslatorOptions _translatorOptions;
+        private readonly AppSettings _speechSettings = settings;
+
         private readonly AudioOutputStream _audioOutputStream = AudioOutputStream.CreatePullStream();
 
-        private readonly IHubContext<CaptionSignalRHub> _captionHub;
-        private readonly RtcSessionManager _rtcSessionManager;
-        private readonly ITranslatorClient _translatorClient;
-        private readonly IConnectionMultiplexer _mux;
-        private readonly string _threadId;
         // per-speaker streams and recognizers
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly ConcurrentDictionary<string, PushAudioInputStream> _audioInputStreamDic = [];
         private readonly Dictionary<string, TranslationRecognizer> _recognizerDic = [];
         private PhraseListGrammar _phraseList;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="AzureSpeechService" /> class.
-        /// </summary>
-        public AzureSpeechService(AppSettings settings, string threadId = "")
-        {
-            _appSettings = settings;
-            _translatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
-            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
-            _threadId = threadId ?? string.Empty;
-
-            _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
-            _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
-            _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
-            _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
-        }
-
         private async Task CreateRecognizer(string sourceLang)
         {
             var audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
             var speechConfig = SpeechConfig(sourceLang);
-            if (_appSettings.CustomSpeechEndpoints.TryGetValue(sourceLang, out string endpoint) && !string.IsNullOrEmpty(endpoint))
+            if (_speechSettings.CustomSpeechEndpoints.TryGetValue(sourceLang, out string endpoint) && !string.IsNullOrEmpty(endpoint))
                 speechConfig.EndpointId = endpoint;
 
             TranslationRecognizer recognizer;
@@ -91,7 +54,7 @@ namespace EchoBot.Media
             else
             {
                 // prepare auto-detect config for recognizers
-                var speechEndpoints = _appSettings.CustomSpeechEndpoints.ToDictionary(k => k.Key, endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
+                var speechEndpoints = _speechSettings.CustomSpeechEndpoints.ToDictionary(k => k.Key, endpoint => endpoint.Value == null ? SourceLanguageConfig.FromLanguage(endpoint.Key)
                     : SourceLanguageConfig.FromLanguage(endpoint.Key, endpoint.Value));
                 var autoDetect = AutoDetectSourceLanguageConfig.FromSourceLanguageConfigs([.. speechEndpoints.Values]);
                 recognizer = new TranslationRecognizer(speechConfig, autoDetect, AudioConfig.FromStreamInput(audioInputStream));
@@ -138,11 +101,12 @@ namespace EchoBot.Media
 
         private SpeechTranslationConfig SpeechConfig(string sourceLang)
         {
-            var speechConfig = SpeechTranslationConfig.FromSubscription(_appSettings.SpeechConfigKey, _appSettings.SpeechConfigRegion);
+            var speechConfig = SpeechTranslationConfig.FromSubscription(_speechSettings.SpeechConfigKey, _speechSettings.SpeechConfigRegion);
             if (!sourceLang.Equals(AUTO))
                 speechConfig.SpeechRecognitionLanguage = sourceLang;
 
-            _translatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
+            TranslatorOptions.Routing.Keys.ForEach(lang => speechConfig.AddTargetLanguage(lang.Split('-')[0]));
+
             // 提升识别准确率
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
             speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "300"); // 让断句更短
@@ -169,9 +133,6 @@ namespace EchoBot.Media
                 if (string.IsNullOrWhiteSpace(partialText))
                     return;
 
-                if (!RecognizingInterval(speakerId, MinIntervalMs))
-                    return;
-
                 var translations = e.Result.Translations.ToDictionary(k => AppConstants.LangMap.FirstOrDefault(l => l.Key.StartsWith(k.Key)).Value ?? k.Key, v => v.Value);
                 var captions = BuildTextDictionary(translations, sourceLang, partialText);
                 _ = Transcript(captions, false, e.Offset, e.Result.Duration, sourceLang, partialText, speakerId);
@@ -190,20 +151,6 @@ namespace EchoBot.Media
                 if (!string.IsNullOrWhiteSpace(p))
                     _phraseList.AddPhrase(p);
             }
-        }
-
-        // 是否可发送（满足时间窗口）
-        private static bool RecognizingInterval(string key, int minIntervalMs)
-        {
-            var now = Environment.TickCount64; // 单调递增毫秒
-            var last = _lastSentAtMs.GetOrAdd(key, 0L);
-
-            // 未达到间隔：不发送
-            if (now - last < minIntervalMs) return false;
-
-            // 达到/超过间隔：更新并允许发送
-            _lastSentAtMs[key] = now;
-            return true;
         }
 
         private async Task Recognizer_Recognized(TranslationRecognizer? sender, TranslationRecognitionEventArgs e)
@@ -232,7 +179,7 @@ namespace EchoBot.Media
         /// <param name="speakerId">Optional explicit speaker id to route to.</param>
         public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
-            var sourceLangs = _appSettings.CustomSpeechEndpoints.Keys;
+            var sourceLangs = _speechSettings.CustomSpeechEndpoints.Keys;
 
             if (!IsRunning)
             {
@@ -294,122 +241,6 @@ namespace EchoBot.Media
         private void Start()
         {
             if (!IsRunning) { IsRunning = true; }
-        }
-
-        private async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
-        {
-            await _rtcSessionManager.PlayText(_threadId, text, lang, sourceLang, speakerId).ConfigureAwait(false);
-        }
-
-        private async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
-        {
-            try
-            {
-                var translatorRules = _translatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
-
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
-
-                await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Translate failed: {Message}", ex.Message);
-            }
-        }
-
-        private async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration,
-            string sourceLang, string sourceText, string audioId)
-        {
-            long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks，offset 是针对 Speech Regonizer 识别的时差（不能用于多 Regonizer 的线性排序）
-            long endMs = startMs + (long)duration.TotalMilliseconds;
-            long realStartMs = (DateTime.UtcNow - DateTime.UnixEpoch).Ticks / 10_000;
-            sourceLang = AppConstants.LangMap.TryGetValue(sourceLang, out string? value) ? value : sourceLang.Split('-')[0];
-
-            // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
-            var speaker = await GetParticipant(audioId);
-            var payload = new CaptionPayload(
-                Type: "caption",
-                MeetingId: _threadId,
-                Speaker: speaker.DisplayName,
-                SpeakerId: speaker.Id,
-                SourceLang: sourceLang,
-                Text: BuildTextDictionary(captions, sourceLang, sourceText),
-                IsFinal: isFinal,
-                StartMs: startMs,
-                EndMs: endMs,
-                RealStartMs: realStartMs
-            );
-
-            try
-            {
-                // Send the transcript to the websocket clients
-                await _captionHub.Clients.Group($"{payload.MeetingId}").SendCoreAsync("caption", [payload], default);
-
-                if (!isFinal)
-                    return;
-
-                var listKey = $"list:{_threadId}";
-                await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
-                await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
-
-                // For each available caption (language -> text), synthesize speech and publish in parallel
-                _ = TextToSpeechBatch(captions.ToDictionary(k => k.Key, v => v.Value), sourceLang, speaker.Id);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Transcript and send error");
-            }
-        }
-
-        private async Task<Models.Participant> GetParticipant(string audioId)
-        {
-            // determine speaker label from active speakers if available
-            if (_readFromInstanceTimes++ > 100)
-            {
-                _audioToIdentityMap.Clear();
-                _readFromInstanceTimes = 0;
-            }
-
-            _audioToIdentityMap.TryGetValue(audioId, out var speaker);
-            speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{_threadId}-{audioId}");
-            if (speaker != null)
-                _audioToIdentityMap[audioId] = speaker;
-            speaker ??= new Models.Participant { DisplayName = $"Speaker-{audioId}" };
-
-            return speaker;
-        }
-
-        private async Task TextToSpeechBatch(Dictionary<string, string> captions, string sourceLang, string speakerId)
-        {
-            try
-            {
-                var tasks = captions
-                    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
-                    .Select(kv => TextToSpeech(kv.Value, kv.Key, sourceLang, speakerId))
-                    .ToArray();
-
-                if (tasks.Length > 0)
-                    await Task.WhenAll(tasks);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "One or more TextToSpeech tasks failed.");
-            }
-        }
-
-        private Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
-        {
-            var dict = captions.ToDictionary(k => k.Key, v => v.Value);
-            dict[sourceLang] = sourceText; // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
-
-            _placeHolderIndex++;
-            _translatorOptions.Routing.Keys.ForEach(lang =>
-            {
-                if (!dict.ContainsKey(lang))
-                    dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
-            });
-            return dict;
         }
     }
 }
