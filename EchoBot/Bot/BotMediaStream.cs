@@ -14,8 +14,6 @@ namespace EchoBot.Bot
     /// </summary>
     public class BotMediaStream : ObjectRootDisposable
     {
-        private readonly AppSettings _settings;
-
         /// <summary>
         /// The participants
         /// </summary>
@@ -52,14 +50,11 @@ namespace EchoBot.Bot
             ILocalMediaSession mediaSession,
             string callId,
             string threadId,
-            IGraphLogger graphLogger,
-            AppSettings settings
+            IGraphLogger graphLogger
         ) : base(graphLogger)
         {
             ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
-            ArgumentVerifier.ThrowOnNullArgument(settings, nameof(settings));
 
-            _settings = settings;
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
 
             this.participants = [];
@@ -73,7 +68,7 @@ namespace EchoBot.Bot
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            //LanguageService = new AzureSpeechService(_settings, threadId);
+            //LanguageService = new AzureSpeechService(threadId);
             LanguageService = new ByteDanceSpeechService(threadId);
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }

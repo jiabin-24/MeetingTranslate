@@ -38,7 +38,7 @@ namespace EchoBot.Bot
         /// </summary>
         /// <param name="statefulCall">The stateful call.</param>
         /// <param name="settings">The settings.</param>
-        public CallHandler(ICall statefulCall, AppSettings settings)
+        public CallHandler(ICall statefulCall)
             : base(TimeSpan.FromMinutes(10), statefulCall?.GraphLogger!)
         {
             this.Call = statefulCall;
@@ -48,7 +48,7 @@ namespace EchoBot.Bot
             this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
             this._rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, this.GraphLogger, settings);
+            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, this.GraphLogger);
         }
 
         /// <inheritdoc/>
