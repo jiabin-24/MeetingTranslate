@@ -38,7 +38,7 @@ namespace EchoBot.Media
         private readonly Dictionary<string, string> _translateTarget = new()
         {
             {"zh-CN","en" },
-            {"en-US","zh" },
+            //{"en-US","zh" },
         };
 
         public ByteDanceSpeechService(string threadId) : base(threadId)
@@ -258,10 +258,7 @@ namespace EchoBot.Media
                             if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
                                 (resp.Event == EV.Type.SourceSubtitleResponse ? sourceText : tranlatedText).Append(resp.Text);
-                            }
 
-                            if (resp.Event == EV.Type.TranslationSubtitleResponse)
-                            {
                                 var partialText = sourceText.ToString();
                                 var translatedText = tranlatedText.ToString();
                                 var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText }, { _translateTarget[sourceLang], translatedText } },
