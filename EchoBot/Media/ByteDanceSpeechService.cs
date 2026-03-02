@@ -76,18 +76,6 @@ namespace EchoBot.Media
                     while (offset < total && _wsClients.Values.All(c => c.State == WebSocketState.Open) && !_sessionEnded.Task.IsCompleted)
                     {
                         var toSend = Math.Min(ChunkSize, total - offset);
-                        //foreach (var sourceLang in sourceLangs)
-                        //{
-                        //    var chunkReq = new TranslateRequest
-                        //    {
-                        //        RequestMeta = new RequestMeta { SessionID = _sessionIds[sourceLang] },
-                        //        Event = EV.Type.TaskRequest,
-                        //        SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(buffer, offset, toSend) }
-                        //    };
-
-                        //    await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
-                        //}
-
                         var tasks = sourceLangs.Select(l =>
                         {
                             var chunkReq = new TranslateRequest

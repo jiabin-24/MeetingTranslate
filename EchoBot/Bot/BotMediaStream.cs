@@ -68,8 +68,8 @@ namespace EchoBot.Bot
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
-            //LanguageService = new AzureSpeechService(threadId);
-            LanguageService = new ByteDanceSpeechService(threadId);
+            var config = ServiceLocator.GetRequiredService<IConfiguration>();
+            LanguageService = "ByteDance".Equals(config["SpeechServiceModel"]) ? new ByteDanceSpeechService(threadId) : new AzureSpeechService(threadId);
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
