@@ -27,7 +27,7 @@ namespace EchoBot.Media
         /// </summary>
         protected bool _isDraining;
 
-        private const string AUTO = "auto";
+        protected override string AUTO => "auto";
 
         private readonly AppSettings _speechSettings = ServiceLocator.GetRequiredService<IOptions<AppSettings>>().Value;
 
@@ -107,7 +107,7 @@ namespace EchoBot.Media
 
             // 提升识别准确率
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_LanguageIdMode, "Continuous"); // 持续检测语言
-            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "300"); // 让断句更短
+            speechConfig.SetProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, "200"); // 让断句更短
             //speechConfig.SetProperty(PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "2000"); // 开头如果一直安静，到这个超时就跳过等待（适合尽快“进入状态”）
             speechConfig.SetProperty(PropertyId.SpeechServiceResponse_StablePartialResultThreshold, "1"); // 生成“稳定（不易回撤）”中间结果前所需的内部稳定度阈值，数字越小越“激进”
             //speechConfig.SetProperty("SpeechServiceResponse_ContinuousLanguageId_Priority", "Latency"); // 语言检测优先准确率

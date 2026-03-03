@@ -7,6 +7,7 @@ import CaptionsPanel from "./captionsPanel";
 const AppInMeeting = props => {
     const [meetingId, setMeetingId] = useState(null);
     const [currentUser, setCurrentUser] = useState(null);
+    const useByteDance = true;
     
     useEffect(() => {
         microsoftTeams.app.initialize().then(() => {
@@ -20,7 +21,7 @@ const AppInMeeting = props => {
     }, []);
 
     const [sourceLang, setSourceLang] = useState(() => {
-        return localStorage.getItem('sourceLang') || 'zh-Hans';
+        return useByteDance ? 'zhen' : localStorage.getItem('sourceLang') || 'zh-Hans';
     });
     const [targetLang, setTargetLang] = useState(() => {
         return localStorage.getItem('targetLang') || 'en';
@@ -41,8 +42,9 @@ const AppInMeeting = props => {
         <div className="captions-panel-container">
             <div className="language-switcher">
                 <span>Translate from</span>
-                <select value={sourceLang} onChange={e => setSourceLang(e.target.value)}>
+                <select value={sourceLang} onChange={e => setSourceLang(e.target.value)} disabled={useByteDance}>
                     {/* <option value="">Auto Detect</option> */}
+                    <option value="zhen">Auto Detect</option>
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
                 </select>
