@@ -33,6 +33,11 @@ namespace EchoBot.Media
 
         protected string CurrentSpeakerId = string.Empty;
 
+        /// <summary>
+        /// 自动检测来源语言的标志
+        /// </summary>
+        protected abstract string AUTO { get; }
+
         private readonly string _threadId;
 
         // Mapping between audio socket Id and participant Id.
@@ -224,7 +229,7 @@ namespace EchoBot.Media
             return false;
         }
 
-        protected Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
+        protected Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText, string? translateText = null)
         {
             var dict = captions.ToDictionary(k => k.Key, v => v.Value);
             dict[sourceLang] = sourceText; // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
@@ -234,7 +239,7 @@ namespace EchoBot.Media
             TranslatorOptions.Routing.Keys.ForEach(lang =>
             {
                 if (!dict.ContainsKey(lang))
-                    dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
+                    dict[lang] = translateText ?? $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
         }

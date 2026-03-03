@@ -27,7 +27,7 @@ namespace EchoBot.Media
         /// </summary>
         protected bool _isDraining;
 
-        private const string AUTO = "auto";
+        protected override string AUTO => "auto";
 
         private readonly AppSettings _speechSettings = ServiceLocator.GetRequiredService<IOptions<AppSettings>>().Value;
 

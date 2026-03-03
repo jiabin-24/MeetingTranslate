@@ -14,9 +14,9 @@ using EV = Data.Speech.Event;
 
 namespace EchoBot.Media
 {
-    public class ByteDanceSpeechService : BaseSpeechService
+    public class ByteDanceSpeechService(string threadId) : BaseSpeechService(threadId)
     {
-        private readonly ByteDanceSettings _byteDanceSettings;
+        private readonly ByteDanceSettings _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
 
         private readonly ConcurrentDictionary<string, ClientWebSocket> _wsClients = [];
 
@@ -32,19 +32,17 @@ namespace EchoBot.Media
 
         private const string UID = "ast_csharp_client";
 
+        protected override string AUTO => "zhen";
+
         // 0 = not starting, 1 = starting/in-progress
         private int _starting = 0;
 
         private readonly Dictionary<string, string> _translateTarget = new()
         {
-            {"zh-CN","en" },
+            //{"zh-CN","en" },
             //{"en-US","zh" },
+            {"zhen","zhen" },
         };
-
-        public ByteDanceSpeechService(string threadId) : base(threadId)
-        {
-            _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
-        }
 
         public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
@@ -249,8 +247,8 @@ namespace EchoBot.Media
 
                                 var partialText = sourceText.ToString();
                                 var translatedText = tranlatedText.ToString();
-                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText }, { _translateTarget[sourceLang], translatedText } },
-                                    sourceLang, partialText);
+                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } },
+                                    sourceLang, partialText, translatedText);
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
