@@ -26,8 +26,10 @@ namespace EchoBot.Media
 
         private readonly TaskCompletionSource<bool> _sessionEnded = new();
 
-        private MemoryStream _recvAudio;
-
+        private readonly byte[] _sendBuffer = new byte[ChunkSize];
+        private readonly object _sendLock = new();
+        private int _sendLen = 0;
+        
         private const int ChunkSize = 3200;
 
         private const string UID = "ast_csharp_client";
@@ -69,25 +71,22 @@ namespace EchoBot.Media
 
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
-                    var total = (int)bufferLength;
-                    var offset = 0;
-                    while (offset < total && _wsClients.Values.All(c => c.State == WebSocketState.Open) && !_sessionEnded.Task.IsCompleted)
+                    // Append incoming 640-byte buffer and send only when we have exactly one full ChunkSize (5 * 640).
+                    var chunkToSend = GetBatchBuffer(buffer, (int)bufferLength);
+                    if (chunkToSend != null && _wsClients.Values.All(c => c.State == WebSocketState.Open) && !_sessionEnded.Task.IsCompleted)
                     {
-                        var toSend = Math.Min(ChunkSize, total - offset);
                         var tasks = sourceLangs.Select(l =>
                         {
                             var chunkReq = new TranslateRequest
                             {
                                 RequestMeta = new RequestMeta { SessionID = _sessionIds[l] },
                                 Event = EV.Type.TaskRequest,
-                                SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(buffer, offset, toSend) }
+                                SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(chunkToSend) }
                             };
 
                             return _wsClients[l].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
                         });
                         await Task.WhenAll(tasks).ConfigureAwait(false);
-
-                        offset += toSend;
                         await Task.Delay(10);
                     }
                 }
@@ -103,16 +102,14 @@ namespace EchoBot.Media
 
         private async Task Start(string sourceLang)
         {
-            _recvAudio = new MemoryStream();
             _wsClients[sourceLang] = await CreateWsClient();
-
             _sessionIds[sourceLang] = Guid.NewGuid().ToString();
             _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
+
             // Start receive loop
-            _ = Task.Run(async () => await ReceiveMessage(_sessionIds[sourceLang], sourceLang));
-
+            _ = ReceiveMessage(_sessionIds[sourceLang], sourceLang);
+            // Send StartSession to trigger handshake
             await StartSession(_sessionIds[sourceLang], sourceLang);
-
             // Wait handshake
             await _handshakeDones[sourceLang].Task.ConfigureAwait(false);
         }
@@ -267,6 +264,27 @@ namespace EchoBot.Media
                 Logger.LogError(e, "Receiver error");
                 _sessionEnded.TrySetResult(true);
             }
+        }
+
+        private byte[] GetBatchBuffer(byte[]? buffer, int bufferLength)
+        {
+            // Append incoming 640-byte buffer and send only when we have exactly one full ChunkSize (5 * 640).
+            byte[] chunkToSend = null;
+            lock (_sendLock)
+            {
+                // Copy incoming data (assumed to be 640 bytes) into send buffer
+                Array.Copy(buffer, 0, _sendBuffer, _sendLen, bufferLength);
+                _sendLen += bufferLength;
+
+                // When we've accumulated exactly ChunkSize, prepare chunk and reset
+                if (_sendLen >= ChunkSize)
+                {
+                    chunkToSend = new byte[ChunkSize];
+                    Array.Copy(_sendBuffer, 0, chunkToSend, 0, ChunkSize);
+                    _sendLen = 0;
+                }
+            }
+            return chunkToSend;
         }
 
         public override void AddPhrases(IEnumerable<string> phrases)
