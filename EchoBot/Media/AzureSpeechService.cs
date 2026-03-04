@@ -62,7 +62,7 @@ namespace EchoBot.Media
             _audioInputStreamDic[sourceLang] = audioInputStream;
 
             _phraseList = PhraseListGrammar.FromRecognizer(recognizer);
-            _phraseList.SetWeight(1.5);
+            _phraseList.SetWeight(2.0);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
