@@ -156,7 +156,7 @@ namespace EchoBot.Media
             speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{_threadId}-{audioId}");
             if (speaker != null)
                 _audioToIdentityMap[audioId] = speaker;
-            speaker ??= new Models.Participant { DisplayName = $"Speaker-{audioId}" };
+            speaker ??= new Models.Participant { Id = audioId, DisplayName = $"Speaker-{audioId}" };
 
             return speaker;
         }
