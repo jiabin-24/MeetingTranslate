@@ -1,4 +1,5 @@
-﻿using MeetingTranscription.Models.Configuration;
+﻿using EchoBot.Constants;
+using MeetingTranscription.Models.Configuration;
 using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
@@ -24,12 +25,17 @@ namespace EchoBot.Translator
             _http.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Region", translatorOpt.Region);
         }
 
-        public async Task<string> TranslateAsync(
+        private async Task<string> TranslateAsync(
             string text,
+            string sourceLang,
             string to,
             string category,
             CancellationToken ct = default)
         {
+            // If the source language maps to the target language, return the original text without calling the translation API.
+            if (AppConstants.LangMap.TryGetValue(sourceLang, out var mappedSourceLang) && mappedSourceLang.Equals(to))
+                return text;
+
             var uri = !string.IsNullOrEmpty(category)
                 ? $"{_endpoint}/translate?api-version=3.0&to={to}&category={category}"
                 : $"{_endpoint}/translate?api-version=3.0&to={to}";
@@ -53,11 +59,12 @@ namespace EchoBot.Translator
 
         public async Task<Dictionary<string, string>> BatchTranslateAsync(
             string text,
+            string sourceLang,
             Dictionary<string, string> toCategory,
             CancellationToken ct = default)
         {
             // Create a translation task for each route rule
-            var tasks = toCategory.Keys.ToDictionary(to => to, to => TranslateAsync(text, to, toCategory[to], ct));
+            var tasks = toCategory.Keys.ToDictionary(to => to, to => TranslateAsync(text, sourceLang, to, toCategory[to], ct));
 
             // Await all translations concurrently
             var results = await Task.WhenAll(tasks.Values).ConfigureAwait(false);

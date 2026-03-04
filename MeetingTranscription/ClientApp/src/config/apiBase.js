@@ -2,3 +2,5 @@
 // REACT_APP_API_BASE when building the app. Defaults to localhost for
 // local development.
 export const API_BASE = '';
+
+export const USE_BYTE_DANCE = true;

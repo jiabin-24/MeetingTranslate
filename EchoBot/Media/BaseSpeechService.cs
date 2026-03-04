@@ -86,10 +86,10 @@ namespace EchoBot.Media
         {
             try
             {
-                var translatorRules = TranslatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
+                var transEndpoints = TranslatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                var translated = await _translatorClient.BatchTranslateAsync(original, translatorRules!, cts.Token);
+                var translated = await _translatorClient.BatchTranslateAsync(original, sourceLang, transEndpoints!, cts.Token);
 
                 await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
             }

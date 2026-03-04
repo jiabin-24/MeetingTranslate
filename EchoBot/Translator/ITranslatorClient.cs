@@ -2,14 +2,9 @@
 {
     public interface ITranslatorClient
     {
-        Task<string> TranslateAsync(
-            string text,
-            string to,
-            string category,
-            CancellationToken ct = default);
-
         Task<Dictionary<string, string>> BatchTranslateAsync(
             string text,
+            string sourceLang,
             Dictionary<string, string> toCategory,
             CancellationToken ct = default);
     }

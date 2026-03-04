@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE } from '../config/apiBase';
+import { API_BASE, USE_BYTE_DANCE } from '../config/apiBase';
 import * as microsoftTeams from "@microsoft/teams-js";
 import CaptionsPanel from "./captionsPanel";
 
@@ -7,7 +7,7 @@ import CaptionsPanel from "./captionsPanel";
 const AppInMeeting = props => {
     const [meetingId, setMeetingId] = useState(null);
     const [currentUser, setCurrentUser] = useState(null);
-    const useByteDance = true;
+    const useByteDance = USE_BYTE_DANCE;
     
     useEffect(() => {
         microsoftTeams.app.initialize().then(() => {
@@ -44,7 +44,7 @@ const AppInMeeting = props => {
                 <span>Translate from</span>
                 <select value={sourceLang} onChange={e => setSourceLang(e.target.value)} disabled={useByteDance}>
                     {/* <option value="">Auto Detect</option> */}
-                    <option value="zhen">Auto Detect</option>
+                    {useByteDance && <option value="zhen">Auto Detect</option>}
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
                 </select>
