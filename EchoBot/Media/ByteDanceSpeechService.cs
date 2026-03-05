@@ -298,6 +298,7 @@ namespace EchoBot.Media
 
         public override async Task ShutDownAsync()
         {
+            await base.ShutDownAsync().ConfigureAwait(false);
             await Task.WhenAll(_translateTarget.Keys.Select(l => FinishSession(_sessionIds[l], l))).ConfigureAwait(false);
         }
     }

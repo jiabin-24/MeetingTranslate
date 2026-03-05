@@ -13,6 +13,7 @@ using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
@@ -77,6 +78,7 @@ static class Program
         builder.Services.AddSingleton(new CallAutomationClient(acsConn));
         builder.Services.AddSingleton(new CommunicationIdentityClient(acsConn));
         builder.Services.AddSingleton<RtcSessionManager>();
+        builder.Services.AddSingleton<AcsMediaWebSocketHandler>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
@@ -101,11 +103,12 @@ static class Program
             app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
 
         app.UseCors("DevCors");
+        app.UseWebSockets();
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.UseBotServices();
         app.UseSpaStaticFiles();
-
+        
         app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
         {
             endpoints.MapControllers();
@@ -114,6 +117,20 @@ static class Program
             pattern: "{controller=Home}/{action=Index}/{id?}");
 
             endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
+        });
+
+        // WebSocket endpoint that ACS will connect to (configure this URL in MediaStreamingOptions.TransportUri)
+        app.Map("/ws/media", async (HttpContext context, AcsMediaWebSocketHandler handler) =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                await context.Response.WriteAsync("Expected WebSocket request");
+                return;
+            }
+
+            using var ws = await context.WebSockets.AcceptWebSocketAsync();
+            await handler.RunAsync(ws, context.RequestAborted);
         });
 
         app.UseSpa(spa =>

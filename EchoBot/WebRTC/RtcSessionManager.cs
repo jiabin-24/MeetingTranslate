@@ -6,7 +6,6 @@ using EchoBot.Constants;
 using EchoBot.Models;
 using EchoBot.Util;
 using System.Collections.Concurrent;
-using System.Security;
 
 namespace EchoBot.WebRTC
 {
@@ -22,61 +21,9 @@ namespace EchoBot.WebRTC
 
         private readonly Uri _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
 
-        private readonly Uri _cognitiveServicesEndpoint = new(config["CognitiveServicesEndpoint"]);
+        private readonly Uri _mediaWebSocketUri = new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media");
 
         private readonly string _acsConnectionString = config["ACSConnectionString"];
-
-        public async Task PlayText(string groupId, string text, string lang, string sourceLang, string speakerId)
-        {
-            try
-            {
-                var (_, callConn) = await EnsureGroupCallConnectionAsync(groupId);
-                if (callConn == null)
-                    return;
-
-                var acsParticipants = (await callConn.GetParticipantsAsync()).Value;
-                var targetParticipants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)))
-                    .Where(p => p.Lang.Equals(lang) && (string.IsNullOrEmpty(p.SourceLang) || p.SourceLang.Equals(sourceLang)) && !p.EntraId.Equals(speakerId))
-                    .Select(p => p.UserId)
-                    .ToList();
-
-                var targets = acsParticipants.Where(p => p.Identifier is CommunicationUserIdentifier && targetParticipants.Contains(p.Identifier.RawId))
-                    .Select(p => p.Identifier).ToList();
-
-                if (targets.Count == 0)
-                    return;
-
-                (string locale, string voice) = lang?.ToLowerInvariant() switch
-                {
-                    var l when l.StartsWith("zh") => ("zh-CN", "zh-CN-XiaoxiaoNeural"),
-                    var l when l.StartsWith("ja") => ("ja-JP", "ja-JP-NanamiNeural"),
-                    var l when l.StartsWith("ko") => ("ko-KR", "ko-KR-SunHiNeural"),
-                    var l when l.StartsWith("en") => ("en-US", "en-US-JennyNeural"),
-                    _ => ("en-US", "en-US-JennyNeural")
-                };
-
-                var ssml =
-                $@"<speak version=""1.0"" xmlns=""http://www.w3.org/2001/10/synthesis"" xml:lang=""{locale}"">
-                    <voice name=""{voice}"">
-                        <prosody rate=""1.25"">
-                            {SecurityElement.Escape(text)}
-                        </prosody>
-                    </voice>
-                </speak>";
-                
-                var media = callConn.GetCallMedia();
-                var ssmlSrc = new SsmlSource(ssml);
-
-                foreach (var target in targets)
-                {
-                    await media.PlayAsync(ssmlSrc, [target]);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "PlayText to ACS failed");
-            }
-        }
 
         public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync(string groupId)
         {
@@ -96,9 +43,19 @@ namespace EchoBot.WebRTC
                 return ("Room has not been inited", null);
 
             var callLocator = new RoomCallLocator(cachedRoomId);
+            // Media streaming configuration
+            var mediaStreamingOptions = new MediaStreamingOptions(MediaStreamingAudioChannel.Mixed, StreamingTransport.Websocket)
+            {
+                TransportUri = _mediaWebSocketUri,
+                StartMediaStreaming = true,
+                EnableBidirectional = true,
+                EnableDtmfTones = true,
+                AudioFormat = AudioFormat.Pcm16KMono
+            };
+
             var connectCallOptions = new ConnectCallOptions(callLocator, _callback)
             {
-                CallIntelligenceOptions = new CallIntelligenceOptions() { CognitiveServicesEndpoint = _cognitiveServicesEndpoint },
+                MediaStreamingOptions = mediaStreamingOptions
             };
 
             ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);

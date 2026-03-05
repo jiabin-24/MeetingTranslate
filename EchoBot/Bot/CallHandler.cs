@@ -1,6 +1,5 @@
 ﻿using EchoBot.Constants;
 using EchoBot.Util;
-using EchoBot.WebRTC;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
@@ -31,8 +30,6 @@ namespace EchoBot.Bot
 
         private readonly CacheHelper _cacheHelper;
 
-        private readonly RtcSessionManager _rtcSessionManager;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
         /// </summary>
@@ -47,7 +44,6 @@ namespace EchoBot.Bot
 
             this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
-            this._rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, this.GraphLogger);
         }
 
@@ -63,7 +59,6 @@ namespace EchoBot.Bot
             base.Dispose(disposing);
             this.Call.OnUpdated -= this.CallOnUpdated;
             this.Call.Participants.OnUpdated -= async (s, e) => await this.ParticipantsOnUpdated(s, e);
-            _rtcSessionManager.Dispose(_threadId).Wait();
 
             foreach (var participant in this.Call.Participants)
             {
