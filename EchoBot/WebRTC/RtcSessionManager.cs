@@ -21,9 +21,9 @@ namespace EchoBot.WebRTC
 
         private readonly Uri _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
 
-        private readonly Uri _mediaWebSocketUri = new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media");
-
         private readonly string _acsConnectionString = config["ACSConnectionString"];
+
+        private Uri MediaWebSocketUri(string threadId) => new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media?threadId={threadId}");
 
         public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync(string groupId)
         {
@@ -46,11 +46,11 @@ namespace EchoBot.WebRTC
             // Media streaming configuration
             var mediaStreamingOptions = new MediaStreamingOptions(MediaStreamingAudioChannel.Mixed, StreamingTransport.Websocket)
             {
-                TransportUri = _mediaWebSocketUri,
+                TransportUri = MediaWebSocketUri(groupId),
                 StartMediaStreaming = true,
                 EnableBidirectional = true,
                 EnableDtmfTones = true,
-                AudioFormat = AudioFormat.Pcm16KMono
+                AudioFormat = AudioFormat.Pcm16KMono,
             };
 
             var connectCallOptions = new ConnectCallOptions(callLocator, _callback)

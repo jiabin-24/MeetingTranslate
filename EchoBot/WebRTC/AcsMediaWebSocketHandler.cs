@@ -1,14 +1,12 @@
 ﻿using Azure.Communication.CallAutomation;
-using EchoBot.WebRTC;
+using EchoBot.Util;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
 
-public sealed class AcsMediaWebSocketHandler(ILogger<AcsMediaWebSocketHandler> logger, RtcSessionManager rtcSessionManager)
+public sealed class AcsMediaWebSocketHandler()
 {
-    private readonly ILogger<AcsMediaWebSocketHandler> _logger = logger;
-
-    private readonly RtcSessionManager _rtcSessionManager = rtcSessionManager;
+    private readonly ILogger _logger = ServiceLocator.GetRequiredService<ILogger<AcsMediaWebSocketHandler>>();
 
     // Channel writer exposed so external producers (TTS) can push PCM bytes into the outbound pipeline.
     // The writer is created per active call/connection when AudioMetadata arrives.
@@ -175,9 +173,6 @@ public sealed class AcsMediaWebSocketHandler(ILogger<AcsMediaWebSocketHandler> l
         }
         finally
         {
-            // ensure writer is cleared
-            _ttsWriter = null;
-
             // Send stop if socket still open
             if (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
             {
@@ -205,10 +200,6 @@ public sealed class AcsMediaWebSocketHandler(ILogger<AcsMediaWebSocketHandler> l
     /// </summary>
     public async ValueTask<bool> PushTtsFrameAsync(string threadId, byte[] pcm, CancellationToken ct)
     {
-        var (_, callConn) = await _rtcSessionManager.EnsureGroupCallConnectionAsync(threadId);
-        if (callConn == null)
-            return false;
-
         var w = _ttsWriter;
         if (w is null)
             return false;

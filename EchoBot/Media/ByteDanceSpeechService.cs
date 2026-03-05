@@ -29,7 +29,9 @@ namespace EchoBot.Media
         private readonly byte[] _sendBuffer = new byte[ChunkSize];
         private readonly object _sendLock = new();
         private int _sendLen = 0;
-        
+
+        private readonly MemoryStream _recvAudio = new();
+
         private const int ChunkSize = 3200;
 
         private const string UID = "ast_csharp_client";
@@ -141,7 +143,7 @@ namespace EchoBot.Media
                 // Teams sends raw PCM 16-bit little-endian samples (not a WAV file with RIFF header).
                 // Report the source audio format as PCM so the remote service treats the binary frames as raw PCM samples.
                 SourceAudio = new Audio { Format = "pcm", Rate = 16000, Bits = 16, Channel = 1 },
-                TargetAudio = new Audio { Format = "ogg_opus", Rate = 48000 },
+                TargetAudio = new Audio { Format = "pcm", Rate = 16000 },
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = _translateTarget[sourceLang] }
             };
             await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
@@ -192,7 +194,7 @@ namespace EchoBot.Media
                             return;
                         }
                         ms.Write(buffer, 0, result.Count);
-                    } while (!result.EndOfMessage);
+                    } while (!result.EndOfMessage && wsClient.State == WebSocketState.Open);
 
                     var data = ms.ToArray();
                     try
@@ -231,6 +233,14 @@ namespace EchoBot.Media
                             Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", sourceLang, original);
                             await BatchTranslateAsync(original, sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId);
 
+                            if (_recvAudio.Length > 0)
+                            {
+                                //var pcm16 = ResamplePcm16(_recvAudio.ToArray(), 24000, 16000);
+                                await TextToSpeech(_recvAudio.ToArray(), _translateTarget[sourceLang], sourceLang, CurrentSpeakerId);
+                                _recvAudio.SetLength(0); // 清空缓冲
+                                _recvAudio.Position = 0;
+                            }
+
                             sourceText.Clear();
                             tranlatedText.Clear();
                         }
@@ -238,6 +248,10 @@ namespace EchoBot.Media
                         {
                             // Regular data/partial (Recognizing)
                             var speakerId = CurrentSpeakerId;
+                            if (resp.Data != null)
+                            {
+                                await _recvAudio.WriteAsync(resp.Data.ToByteArray());
+                            }
                             if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
                                 (resp.Event == EV.Type.SourceSubtitleResponse ? sourceText : tranlatedText).Append(resp.Text);
@@ -264,6 +278,11 @@ namespace EchoBot.Media
                 Logger.LogError(e, "Receiver error");
                 _sessionEnded.TrySetResult(true);
             }
+        }
+
+        protected override async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
+        {
+            await Task.CompletedTask;
         }
 
         private byte[] GetBatchBuffer(byte[]? buffer, int bufferLength)

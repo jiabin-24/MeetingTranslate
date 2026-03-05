@@ -48,8 +48,6 @@ namespace EchoBot.Media
 
         private readonly RtcSessionManager _rtcSessionManager;
 
-        private readonly AcsMediaWebSocketHandler _acsMediaWebSocket;
-
         private readonly ITranslatorClient _translatorClient;
 
         private readonly IHubContext<CaptionSignalRHub> _captionHub;
@@ -67,7 +65,6 @@ namespace EchoBot.Media
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
-            _acsMediaWebSocket = ServiceLocator.GetRequiredService<AcsMediaWebSocketHandler>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
         }
@@ -77,6 +74,7 @@ namespace EchoBot.Media
             if (!IsRunning) return;
 
             await _rtcSessionManager.Dispose(ThreadId);
+            AcsWebSocketHandlerRegistry.Unregister(ThreadId);
             IsRunning = false;
         }
 
@@ -190,9 +188,11 @@ namespace EchoBot.Media
 
         protected abstract Task TextToSpeech(string text, string lang, string sourceLang, string speakerId);
 
-        protected virtual async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
+        protected async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
         {
-            await _acsMediaWebSocket.PushTtsFrameAsync(ThreadId, pcm, CancellationToken.None);
+            var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, out var handler) ? handler : null;
+            if (acsMediaWebSocket != null)
+                await acsMediaWebSocket.PushTtsFrameAsync(ThreadId, pcm, CancellationToken.None);
         }
 
         // Compute RMS energy from a 16-bit PCM buffer

@@ -24,5 +24,13 @@ namespace EchoBot.Controllers
 
             return roomParticipant;
         }
+
+        [HttpGet("ensureGroupCallConnectionAsync")]
+        public async Task<bool> EnsureGroupCallConnectionAsync(string threadId)
+        {
+            Thread.Sleep(2000);
+            await _rtcSessionManager.EnsureGroupCallConnectionAsync(threadId);
+            return true;
+        }
     }
 }
