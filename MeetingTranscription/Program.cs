@@ -13,6 +13,7 @@ using MeetingTranscription.Models.Configuration;
 using MeetingTranscription.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
@@ -101,6 +102,7 @@ static class Program
             app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
 
         app.UseCors("DevCors");
+        app.UseWebSockets();
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.UseBotServices();
@@ -114,6 +116,22 @@ static class Program
             pattern: "{controller=Home}/{action=Index}/{id?}");
 
             endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
+        });
+
+        // WebSocket endpoint that ACS will connect to (configure this URL in MediaStreamingOptions.TransportUri)
+        app.Map("/ws/media", async (HttpContext context, string threadId) =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                await context.Response.WriteAsync("Expected WebSocket request");
+                return;
+            }
+
+            using var ws = await context.WebSockets.AcceptWebSocketAsync();
+            var handler = new AcsMediaWebSocketHandler();
+            AcsWebSocketHandlerRegistry.Register(threadId, handler);
+            await handler.RunAsync(ws, context.RequestAborted);
         });
 
         app.UseSpa(spa =>

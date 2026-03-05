@@ -11,6 +11,7 @@ using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Data;
 using System.Runtime.InteropServices;
+using System.Security;
 
 namespace EchoBot.Media
 {
@@ -37,6 +38,7 @@ namespace EchoBot.Media
         private readonly PushAudioInputStream _audioInputStream = AudioInputStream.CreatePushStream(AudioStreamFormat.GetWaveFormatPCM(16000, 16, 1));
         private readonly ConcurrentDictionary<string, PushAudioInputStream> _audioInputStreamDic = [];
         private readonly Dictionary<string, TranslationRecognizer> _recognizerDic = [];
+        private SpeechSynthesizer _synthesizer;
         private PhraseListGrammar _phraseList;
 
         private async Task CreateRecognizer(string sourceLang)
@@ -61,8 +63,9 @@ namespace EchoBot.Media
             _recognizerDic[sourceLang] = recognizer;
             _audioInputStreamDic[sourceLang] = audioInputStream;
 
+            _synthesizer ??= new SpeechSynthesizer(speechConfig, AudioConfig.FromStreamOutput(_audioOutputStream));
             _phraseList = PhraseListGrammar.FromRecognizer(recognizer);
-            _phraseList.SetWeight(1.5);
+            _phraseList.SetWeight(2.0);
 
             var stopRecognition = new TaskCompletionSource<int>();
 
@@ -141,6 +144,43 @@ namespace EchoBot.Media
             }
         }
 
+        protected override async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
+        {
+            // convert the text to speech
+            (string locale, string voice) = lang?.ToLowerInvariant() switch
+            {
+                var l when l.StartsWith("zh") => ("zh-CN", "zh-CN-XiaoxiaoNeural"),
+                var l when l.StartsWith("ja") => ("ja-JP", "ja-JP-NanamiNeural"),
+                var l when l.StartsWith("ko") => ("ko-KR", "ko-KR-SunHiNeural"),
+                var l when l.StartsWith("en") => ("en-US", "en-US-JennyNeural"),
+                _ => ("en-US", "en-US-JennyNeural")
+            };
+
+            var ssml =
+            $@"<speak version=""1.0"" xmlns=""http://www.w3.org/2001/10/synthesis"" xml:lang=""{locale}"">
+                    <voice name=""{voice}"">
+                        <prosody rate=""1.25"">
+                            {SecurityElement.Escape(text)}
+                        </prosody>
+                    </voice>
+                </speak>";
+
+            SpeechSynthesisResult result = await _synthesizer.SpeakSsmlAsync(ssml);
+            // take the stream of the result and convert to byte[] then push to ACS
+            using var stream = AudioDataStream.FromResult(result);
+            using var ms = new MemoryStream();
+            var buffer = new byte[4096];
+            uint read;
+
+            // ReadData returns the number of bytes read into the buffer
+            while ((read = stream.ReadData(buffer)) > 0)
+            {
+                ms.Write(buffer, 0, (int)read);
+            }
+
+            await base.TextToSpeech(ms.ToArray(), lang, sourceLang, speakerId);
+        }
+
         // 添加自定义短语以提升识别准确率
         public override void AddPhrases(IEnumerable<string> phrases)
         {
@@ -211,26 +251,22 @@ namespace EchoBot.Media
         /// <returns>Task.</returns>
         public override async Task ShutDownAsync()
         {
-            if (!IsRunning) return;
+            await base.ShutDownAsync().ConfigureAwait(false);
 
-            if (IsRunning)
+            foreach (var recognizer in _recognizerDic)
             {
-                foreach (var recognizer in _recognizerDic)
-                {
-                    await recognizer.Value.StopContinuousRecognitionAsync();
-                    recognizer.Value.Dispose();
-                }
-                foreach (var audioInputStream in _audioInputStreamDic)
-                {
-                    audioInputStream.Value.Close();
-                    audioInputStream.Value.Dispose();
-                }
-
-                _audioInputStream.Close();
-                _audioInputStream.Dispose();
-                _audioOutputStream.Dispose();
-                IsRunning = false;
+                await recognizer.Value.StopContinuousRecognitionAsync();
+                recognizer.Value.Dispose();
             }
+            foreach (var audioInputStream in _audioInputStreamDic)
+            {
+                audioInputStream.Value.Close();
+                audioInputStream.Value.Dispose();
+            }
+
+            _audioInputStream.Close();
+            _audioInputStream.Dispose();
+            _audioOutputStream.Dispose();
         }
 
         /// <summary>

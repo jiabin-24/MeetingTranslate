@@ -38,7 +38,7 @@ namespace EchoBot.Media
         /// </summary>
         protected abstract string AUTO { get; }
 
-        private readonly string _threadId;
+        protected readonly string ThreadId;
 
         // Mapping between audio socket Id and participant Id.
         private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
@@ -58,10 +58,10 @@ namespace EchoBot.Media
 
         public BaseSpeechService(string threadId)
         {
-            Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
+            ThreadId = threadId;
             TranslatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
+            Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
 
-            _threadId = threadId;
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
@@ -69,7 +69,14 @@ namespace EchoBot.Media
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
         }
 
-        public abstract Task ShutDownAsync();
+        public virtual async Task ShutDownAsync()
+        {
+            if (!IsRunning) return;
+
+            await _rtcSessionManager.Dispose(ThreadId);
+            AcsWebSocketHandlerRegistry.Unregister(ThreadId);
+            IsRunning = false;
+        }
 
         public abstract Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId);
 
@@ -111,7 +118,7 @@ namespace EchoBot.Media
             var speaker = await GetParticipant(audioId);
             var payload = new CaptionPayload(
                 Type: "caption",
-                MeetingId: _threadId,
+                MeetingId: ThreadId,
                 Speaker: speaker.DisplayName,
                 SpeakerId: speaker.Id,
                 SourceLang: sourceLang,
@@ -130,7 +137,7 @@ namespace EchoBot.Media
                 if (!isFinal)
                     return;
 
-                var listKey = $"list:{_threadId}";
+                var listKey = $"list:{ThreadId}";
                 await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
                 await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 
@@ -153,7 +160,7 @@ namespace EchoBot.Media
             }
 
             _audioToIdentityMap.TryGetValue(audioId, out var speaker);
-            speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{_threadId}-{audioId}");
+            speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{ThreadId}-{audioId}");
             if (speaker != null)
                 _audioToIdentityMap[audioId] = speaker;
             speaker ??= new Models.Participant { Id = audioId, DisplayName = $"Speaker-{audioId}" };
@@ -179,9 +186,13 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task TextToSpeech(string text, string lang, string sourceLang, string speakerId)
+        protected abstract Task TextToSpeech(string text, string lang, string sourceLang, string speakerId);
+
+        protected async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
         {
-            await _rtcSessionManager.PlayText(_threadId, text, lang, sourceLang, speakerId).ConfigureAwait(false);
+            var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, out var handler) ? handler : null;
+            if (acsMediaWebSocket != null)
+                await acsMediaWebSocket.PushTtsFrameAsync(ThreadId, pcm, CancellationToken.None);
         }
 
         // Compute RMS energy from a 16-bit PCM buffer
