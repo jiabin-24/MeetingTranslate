@@ -53,7 +53,15 @@ function sortByTime(arr) {
         // Ensure final captions come before partial (non-final) captions
         const aFinal = !!a.isFinal;
         const bFinal = !!b.isFinal;
-        if (aFinal !== bFinal) return aFinal ? -1 : 1;
+        if (aFinal !== bFinal) {
+            // Only enforce final-before-partial ordering when the lines
+            // belong to the same speaker. For different speakers keep
+            // the time ordering so partials from one speaker don't
+            // always sort after finals from another.
+            const aSpeaker = a.speakerId ?? '';
+            const bSpeaker = b.speakerId ?? '';
+            if (aSpeaker === bSpeaker) return aFinal ? -1 : 1;
+        }
 
         const sa = a.startMs ?? 0;
         const sb = b.startMs ?? 0;
