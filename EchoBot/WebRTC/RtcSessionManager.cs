@@ -5,48 +5,61 @@ using Azure.Communication.Rooms;
 using EchoBot.Constants;
 using EchoBot.Models;
 using EchoBot.Util;
-using System.Collections.Concurrent;
 
 namespace EchoBot.WebRTC
 {
-    public class RtcSessionManager(CacheHelper cache, CallAutomationClient automationClient, IConfiguration config, ILogger<RtcSessionManager> logger)
+    public class RtcSessionManager
     {
-        private readonly CacheHelper _cache = cache;
+        private readonly CacheHelper _cache;
 
-        private readonly CallAutomationClient _automationClient = automationClient;
+        private readonly CallAutomationClient _automationClient;
 
-        private readonly ConcurrentDictionary<string, CallConnection> _callConnDic = new();
+        private readonly ILogger _logger;
 
-        private readonly ILogger _logger = logger;
+        private readonly string _key;
 
-        private readonly Uri _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
+        private readonly Uri _callback;
 
-        private readonly string _acsConnectionString = config["ACSConnectionString"];
+        private readonly string _acsConnectionString;
 
-        private Uri MediaWebSocketUri(string threadId) => new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media?threadId={threadId}");
+        private readonly Uri _mediaWebSocketUri;
 
-        public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync(string groupId)
+        private CallConnection? _callConn;
+
+        public RtcSessionManager(string threadId, string targetLang)
         {
-            if (_callConnDic.TryGetValue(groupId, out CallConnection callConnection))
-                return (null, callConnection);
+            _cache = ServiceLocator.GetRequiredService<CacheHelper>();
+            _automationClient = ServiceLocator.GetRequiredService<CallAutomationClient>();
+            _logger = ServiceLocator.GetRequiredService<ILogger<RtcSessionManager>>();
+            _key = $"{threadId}:{targetLang}";
 
-            string cachedConnectionId;
-            if (!string.IsNullOrEmpty(cachedConnectionId = await _cache.GetAsync<string>(CacheConstants.AcsConnectKey(groupId))))
+            var config = ServiceLocator.GetRequiredService<IConfiguration>();
+            _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
+            _acsConnectionString = config["ACSConnectionString"];
+            _mediaWebSocketUri = new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media?threadId={threadId}&targetLang={targetLang}");
+        }
+
+        public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync()
+        {
+            if (_callConn != null)
+                return (null, _callConn);
+
+            string cachedConnId;
+            if (!string.IsNullOrEmpty(cachedConnId = await _cache.GetAsync<string>(CacheConstants.AcsConnectKey(_key))))
             {
-                callConnection = _automationClient.GetCallConnection(cachedConnectionId);
-                _callConnDic.TryAdd(groupId, callConnection);
-                return (null, callConnection);
+                _callConn = _automationClient.GetCallConnection(cachedConnId);
+                return (null, _callConn);
             }
 
             string cachedRoomId;
-            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(groupId))))
+            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(_key))))
                 return ("Room has not been inited", null);
 
             var callLocator = new RoomCallLocator(cachedRoomId);
             // Media streaming configuration
             var mediaStreamingOptions = new MediaStreamingOptions(MediaStreamingAudioChannel.Mixed, StreamingTransport.Websocket)
             {
-                TransportUri = MediaWebSocketUri(groupId),
+                TransportUri = _mediaWebSocketUri,
                 StartMediaStreaming = true,
                 EnableBidirectional = true,
                 EnableDtmfTones = true,
@@ -59,22 +72,21 @@ namespace EchoBot.WebRTC
             };
 
             ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
-            var callConnectionId = callResult.CallConnectionProperties.CallConnectionId;
+            cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
 
-            _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", callConnectionId);
-            callConnection = _automationClient.GetCallConnection(callConnectionId);
+            _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", cachedConnId);
+            _callConn = _automationClient.GetCallConnection(cachedConnId);
 
-            _callConnDic.TryAdd(groupId, callConnection);
-            await _cache.SetAsync(CacheConstants.AcsConnectKey(groupId), TimeSpan.FromHours(2), callConnectionId);
+            await _cache.SetAsync(CacheConstants.AcsConnectKey(_key), TimeSpan.FromHours(2), cachedConnId);
 
-            return (null, callConnection);
+            return (null, _callConn);
         }
 
         public async Task<Room> AddRoomParticipant(AddRoomParticipant addPar)
         {
             try
             {
-                var cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(addPar.GroupId));
+                var cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(_key));
                 if (string.IsNullOrEmpty(cachedRoomId))
                 {
                     // 如果房间不存在，先创建房间（同时添加参与者），然后返回
@@ -116,7 +128,7 @@ namespace EchoBot.WebRTC
             var response = await roomsClient.CreateRoomAsync(options);
             var roomId = response.Value.Id;
 
-            await _cache.SetAsync(CacheConstants.AcsRoomKey(groupId), TimeSpan.FromHours(2), roomId);
+            await _cache.SetAsync(CacheConstants.AcsRoomKey(_key), TimeSpan.FromHours(2), roomId);
             _logger.LogInformation("Init with ROOM ID: {RoomId}", roomId);
 
             return new Models.Room
@@ -148,19 +160,19 @@ namespace EchoBot.WebRTC
                 SourceLang = sourceLang,
             };
 
-            var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(groupId)) ?? []).Union([roomParticipant]);
-            await _cache.SetAsync(CacheConstants.AcsRoomParticipantKey(groupId), TimeSpan.FromHours(2), participants);
+            var participants = (await _cache.GetAsync<List<Models.RoomParticipant>>(CacheConstants.AcsRoomParticipantKey(_key)) ?? []).Union([roomParticipant]);
+            await _cache.SetAsync(CacheConstants.AcsRoomParticipantKey(_key), TimeSpan.FromHours(2), participants);
 
             return (participant, roomParticipant);
         }
 
-        public async Task Dispose(string groupId)
+        public async Task Dispose()
         {
-            await _cache.DeleteAsync(CacheConstants.AcsConnectKey(groupId));
-            await _cache.DeleteAsync(CacheConstants.AcsRoomKey(groupId));
-            await _cache.DeleteAsync(CacheConstants.AcsRoomParticipantKey(groupId));
+            await _cache.DeleteAsync(CacheConstants.AcsConnectKey(_key));
+            await _cache.DeleteAsync(CacheConstants.AcsRoomKey(_key));
+            await _cache.DeleteAsync(CacheConstants.AcsRoomParticipantKey(_key));
 
-            _callConnDic.Remove(groupId, out _);
+            _callConn = null;
         }
     }
 }

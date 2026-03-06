@@ -47,8 +47,6 @@ namespace EchoBot.Media
         // Logger created for the runtime type so derived classes get a category with their actual type
         protected ILogger Logger;
 
-        private readonly RtcSessionManager _rtcSessionManager;
-
         private readonly ITranslatorClient _translatorClient;
 
         private readonly IHubContext<CaptionSignalRHub> _captionHub;
@@ -64,7 +62,6 @@ namespace EchoBot.Media
 
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
-            _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
         }
 
@@ -72,8 +69,9 @@ namespace EchoBot.Media
         {
             if (!IsRunning) return;
 
-            await _rtcSessionManager.Dispose(ThreadId);
-            AcsWebSocketHandlerRegistry.Unregister(ThreadId);
+            foreach (var rtcSessionManager in RtcSessionManagerRegistry.UnregisterByThreadId(ThreadId))
+                await rtcSessionManager.Dispose();
+            AcsWebSocketHandlerRegistry.UnregisterByThreadId(ThreadId);
             IsRunning = false;
         }
 
@@ -179,9 +177,12 @@ namespace EchoBot.Media
 
         protected async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
         {
-            var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, out var handler) ? handler : null;
+            if (!sourceLang.Equals(lang))
+                return;
+
+            var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, lang, out var handler) ? handler : null;
             if (acsMediaWebSocket != null)
-                await acsMediaWebSocket.PushTtsFrameAsync(ThreadId, pcm, CancellationToken.None);
+                await acsMediaWebSocket.PushTtsFrameAsync(pcm, CancellationToken.None);
         }
 
         // Compute RMS energy from a 16-bit PCM buffer

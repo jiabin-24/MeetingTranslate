@@ -73,7 +73,7 @@ export default function CaptionsPanel(props) {
         callAgent = await callClient.createCallAgent(tokenCredential);
 
         // Join the call muted so we don't send any local audio back into the meeting
-        const c = callAgent.join({ roomId: roomId }, { audioOptions: { muted: true }, videoOptions: undefined });
+        const c = callAgent.join({ roomId: roomId }, { videoOptions: undefined });
         startCall(c);
     }
 
@@ -114,8 +114,12 @@ export default function CaptionsPanel(props) {
                 } catch { }
             }
 
-            const url = `${API_BASE}/api/acs/ensureGroupCallConnectionAsync?threadId=${encodeURIComponent(meetingId)}`;
-            await fetch(url, { method: 'GET', headers: { 'Accept': 'application/json' }, mode: 'cors', credentials: 'include' });
+            await fetch(`${API_BASE}/api/acs/ensureGroupCallConnectionAsync?threadId=${encodeURIComponent(meetingId)}&targetLang=${encodeURIComponent(targetLang)}`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                mode: 'cors',
+                credentials: 'include'
+            });
         } catch (err) {
             log(err);
         }

@@ -180,6 +180,7 @@ public sealed class AcsMediaWebSocketHandler()
                 try { await SendTextAsync(ws, stop, CancellationToken.None); } catch { /* ignore */ }
             }
 
+            _ttsWriter = null;
             _logger.LogInformation("Outbound audio finished.");
         }
     }
@@ -198,7 +199,7 @@ public sealed class AcsMediaWebSocketHandler()
     /// Convenience helper for external callers to push PCM bytes into the active TTS channel.
     /// Returns false if no active writer exists or the write failed.
     /// </summary>
-    public async ValueTask<bool> PushTtsFrameAsync(string threadId, byte[] pcm, CancellationToken ct)
+    public async ValueTask<bool> PushTtsFrameAsync(byte[] pcm, CancellationToken ct)
     {
         var w = _ttsWriter;
         if (w is null)
@@ -209,8 +210,9 @@ public sealed class AcsMediaWebSocketHandler()
             await w.WriteAsync(pcm, ct);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "PushTtsFrameAsync Error: {Message}", ex.Message);
             return false;
         }
     }

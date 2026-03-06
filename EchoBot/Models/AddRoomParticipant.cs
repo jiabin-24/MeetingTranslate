@@ -6,6 +6,9 @@
 
         public string SourceLang { get; set; }
 
+        /// <summary>
+        /// Target language for translation
+        /// </summary>
         public string Lang { get; set; }
 
         public string ParticipantId { get; set; }

@@ -77,7 +77,6 @@ static class Program
         var acsConn = builder.Configuration.GetValue<string>("ACSConnectionString");
         builder.Services.AddSingleton(new CallAutomationClient(acsConn));
         builder.Services.AddSingleton(new CommunicationIdentityClient(acsConn));
-        builder.Services.AddSingleton<RtcSessionManager>();
 
         // Create the bot as a transient. In this case the ASP Controller is expecting an IBot.
         builder.Services.AddTransient<IBot, TranscriptionBot>();
@@ -119,7 +118,7 @@ static class Program
         });
 
         // WebSocket endpoint that ACS will connect to (configure this URL in MediaStreamingOptions.TransportUri)
-        app.Map("/ws/media", async (HttpContext context, string threadId) =>
+        app.Map("/ws/media", async (HttpContext context, string threadId, string targetLang) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -130,7 +129,7 @@ static class Program
 
             using var ws = await context.WebSockets.AcceptWebSocketAsync();
             var handler = new AcsMediaWebSocketHandler();
-            AcsWebSocketHandlerRegistry.Register(threadId, handler);
+            AcsWebSocketHandlerRegistry.Register(threadId, targetLang, handler);
             await handler.RunAsync(ws, context.RequestAborted);
         });
 

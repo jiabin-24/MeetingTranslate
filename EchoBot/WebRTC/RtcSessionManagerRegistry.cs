@@ -1,0 +1,44 @@
+﻿using System.Collections.Concurrent;
+
+namespace EchoBot.WebRTC
+{
+    public static class RtcSessionManagerRegistry
+    {
+        private static readonly ConcurrentDictionary<string, RtcSessionManager> _registry = new();
+
+        public static void Register(string threadId, string targetLang, RtcSessionManager manager)
+        {
+            if (threadId == null || manager == null) return;
+            _registry[GetKey(threadId, targetLang)] = manager;
+        }
+
+        public static void Unregister(string threadId, string targetLang)
+        {
+            if (threadId == null) return;
+            _registry.TryRemove(GetKey(threadId, targetLang), out _);
+        }
+
+        public static List<RtcSessionManager> UnregisterByThreadId(string threadId)
+        {
+            if (threadId == null) return [];
+            var keysToRemove = _registry.Keys.Where(k => k.StartsWith($"{threadId}_")).ToList();
+            var removedManagers = new List<RtcSessionManager>();
+            foreach (var key in keysToRemove)
+            {
+                if (_registry.TryRemove(key, out var manager))
+                {
+                    removedManagers.Add(manager);
+                }
+            }
+            return removedManagers;
+        }
+
+        public static bool TryGet(string threadId, string targetLang, out RtcSessionManager? manager)
+        {
+            if (threadId == null) { manager = null; return false; }
+            return _registry.TryGetValue(GetKey(threadId, targetLang), out manager);
+        }
+
+        private static string GetKey(string threadId, string targetLang) => $"{threadId}_{targetLang}";
+    }
+}

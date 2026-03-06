@@ -4,26 +4,41 @@ namespace EchoBot.WebRTC
 {
     public static class AcsWebSocketHandlerRegistry
     {
-        private static readonly ConcurrentDictionary<string, AcsMediaWebSocketHandler> _map = new();
+        private static readonly ConcurrentDictionary<string, AcsMediaWebSocketHandler> _registry = new();
 
-        public static bool Register(string threadId, AcsMediaWebSocketHandler handler)
+        public static void Register(string threadId, string targetLang, AcsMediaWebSocketHandler handler)
         {
-            if (threadId == null || handler == null) return false;
-            return _map.TryAdd(threadId, handler);
+            if (threadId == null || handler == null) return;
+            _registry[GetKey(threadId, targetLang)] = handler;
         }
 
-        public static bool Unregister(string threadId)
+        public static void Unregister(string threadId, string targetLang)
         {
-            if (threadId == null) return false;
-            return _map.TryRemove(threadId, out _);
+            if (threadId == null) return;
+            _registry.TryRemove(GetKey(threadId, targetLang), out _);
         }
 
-        public static bool TryGet(string threadId, out AcsMediaWebSocketHandler? handler)
+        public static List<AcsMediaWebSocketHandler> UnregisterByThreadId(string threadId)
+        {
+            if (threadId == null) return [];
+            var keysToRemove = _registry.Keys.Where(k => k.StartsWith($"{threadId}_")).ToList();
+            var removedHandlers = new List<AcsMediaWebSocketHandler>();
+            foreach (var key in keysToRemove)
+            {
+                if (_registry.TryRemove(key, out var Handler))
+                {
+                    removedHandlers.Add(Handler);
+                }
+            }
+            return removedHandlers;
+        }
+
+        public static bool TryGet(string threadId, string targetLang, out AcsMediaWebSocketHandler? handler)
         {
             if (threadId == null) { handler = null; return false; }
-            return _map.TryGetValue(threadId, out handler);
+            return _registry.TryGetValue(GetKey(threadId, targetLang), out handler);
         }
 
-        public static IEnumerable<string> GetAllThreadIds() => _map.Keys;
+        private static string GetKey(string threadId, string targetLang) => $"{threadId}_{targetLang}";
     }
 }
