@@ -31,6 +31,7 @@ namespace EchoBot.Media
         private int _sendLen = 0;
 
         private readonly MemoryStream _recvAudio = new();
+        private int _recvTime = 0;
 
         private const int ChunkSize = 3200;
 
@@ -224,6 +225,7 @@ namespace EchoBot.Media
                         }
                         else if (eventType == EV.Type.TranslationSubtitleEnd)
                         {
+                            _recvTime = resp.StartTime;
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceText.ToString();
                             var transleted = tranlatedText.ToString();
@@ -263,7 +265,7 @@ namespace EchoBot.Media
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
-                                _ = Transcript(captions, false, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
+                                _ = Transcript(captions, false, (ulong)_recvTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
                             }
                         }
                     }
