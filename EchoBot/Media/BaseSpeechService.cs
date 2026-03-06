@@ -6,11 +6,12 @@ using EchoBot.WebSocket;
 using MeetingTranscription.Models.Configuration;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Common;
+using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
 using StackExchange.Redis;
-using System.Collections.Concurrent;
 using static EchoBot.Models.Caption;
 
 namespace EchoBot.Media
@@ -25,11 +26,9 @@ namespace EchoBot.Media
         protected readonly TranslatorOptions TranslatorOptions;
 
         // Energy threshold (RMS) above which we consider this buffer as active speech for assigning speaker id
-        protected const double SpeakerEnergyThreshold = 500.0;
+        protected const double SpeakerEnergyThreshold = 800.0;
 
         private int _placeHolderIndex;
-
-        private int _readFromInstanceTimes = 0;
 
         protected string CurrentSpeakerId = string.Empty;
 
@@ -40,8 +39,10 @@ namespace EchoBot.Media
 
         protected readonly string ThreadId;
 
+        internal List<IParticipant> Participants;
+
         // Mapping between audio socket Id and participant Id.
-        private readonly ConcurrentDictionary<string, Models.Participant> _audioToIdentityMap = new();
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(AudioId, p => IdentityToParticipant(AudioId(p), p.Resource.Info.Identity.User));
 
         // Logger created for the runtime type so derived classes get a category with their actual type
         protected ILogger Logger;
@@ -52,13 +53,12 @@ namespace EchoBot.Media
 
         private readonly IHubContext<CaptionSignalRHub> _captionHub;
 
-        private readonly CacheHelper _cacheHelper;
-
         private readonly IConnectionMultiplexer _mux;
 
-        public BaseSpeechService(string threadId)
+        public BaseSpeechService(string threadId, List<IParticipant> participants)
         {
             ThreadId = threadId;
+            Participants = participants;
             TranslatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
 
@@ -66,7 +66,6 @@ namespace EchoBot.Media
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _rtcSessionManager = ServiceLocator.GetRequiredService<RtcSessionManager>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
-            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
         }
 
         public virtual async Task ShutDownAsync()
@@ -152,17 +151,7 @@ namespace EchoBot.Media
 
         private async Task<Models.Participant> GetParticipant(string audioId)
         {
-            // determine speaker label from active speakers if available
-            if (_readFromInstanceTimes++ > 100)
-            {
-                _audioToIdentityMap.Clear();
-                _readFromInstanceTimes = 0;
-            }
-
-            _audioToIdentityMap.TryGetValue(audioId, out var speaker);
-            speaker ??= await _cacheHelper.GetAsync<Models.Participant>($"{ThreadId}-{audioId}");
-            if (speaker != null)
-                _audioToIdentityMap[audioId] = speaker;
+            AudioToIdentityMap.TryGetValue(audioId, out var speaker);
             speaker ??= new Models.Participant { Id = audioId, DisplayName = $"Speaker-{audioId}" };
 
             return speaker;
@@ -253,6 +242,25 @@ namespace EchoBot.Media
                     dict[lang] = translateText ?? $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
+        }
+
+        private static string AudioId(IParticipant participant) => participant.Resource.MediaStreams.FirstOrDefault(x => x.MediaType == Modality.Audio).SourceId;
+
+        private static Models.Participant IdentityToParticipant(string sourceId, Identity? identity)
+        {
+            if (identity == null)
+            {
+                return new Models.Participant
+                {
+                    Id = sourceId,
+                    DisplayName = string.Empty
+                };
+            }
+            return new Models.Participant
+            {
+                Id = identity.Id!,
+                DisplayName = identity?.DisplayName ?? string.Empty
+            };
         }
     }
 }

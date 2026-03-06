@@ -4,6 +4,7 @@ using Microsoft.CognitiveServices.Speech;
 using Microsoft.CognitiveServices.Speech.Audio;
 using Microsoft.CognitiveServices.Speech.Translation;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Skype.Bots.Media;
 using Sprache;
@@ -21,7 +22,7 @@ namespace EchoBot.Media
     /// <remarks>
     /// Initializes a new instance of the <see cref="AzureSpeechService" /> class.
     /// </remarks>
-    public class AzureSpeechService(string threadId) : BaseSpeechService(threadId)
+    public class AzureSpeechService(string threadId, List<IParticipant> participants) : BaseSpeechService(threadId, participants)
     {
         /// <summary>
         /// The is draining indicator

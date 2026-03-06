@@ -150,13 +150,13 @@ namespace EchoBot.Bot
 
                 if (participantDetails != null)
                 {
-                    json = await UpdateParticipant(this.BotMediaStream.participants, participant, added, participantDetails.DisplayName);
+                    json = await UpdateParticipant(this.BotMediaStream.Participants, participant, added, participantDetails.DisplayName);
                 }
                 else if (participant.Resource.Info.Identity.AdditionalData?.Count > 0)
                 {
                     if (CheckParticipantIsUsable(participant))
                     {
-                        json = await UpdateParticipant(this.BotMediaStream.participants, participant, added);
+                        json = await UpdateParticipant(this.BotMediaStream.Participants, participant, added);
                     }
                 }
 
@@ -174,7 +174,7 @@ namespace EchoBot.Bot
             await UpdateParticipants(args.AddedResources);
             await UpdateParticipants(args.RemovedResources, false);
 
-            if (this.BotMediaStream.participants.Count == 0)
+            if (this.BotMediaStream.Participants.Count == 0)
             {
                 if (string.IsNullOrEmpty(await _cacheHelper.GetAsync<string>(CacheConstants.BotMeetingsKey(_threadId))))
                     return;
@@ -185,29 +185,17 @@ namespace EchoBot.Bot
 
         private async Task OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
-            var oldSourceId = args.OldResource.MediaStreams.FirstOrDefault(x => x.MediaType == Modality.Audio).SourceId;
-            var newSourceId = args.NewResource.MediaStreams.FirstOrDefault(x => x.MediaType == Modality.Audio).SourceId;
+            await Task.CompletedTask;
+        }
 
-            var newIdentityId = sender.Resource.Info.Identity.User.Id;
-            var newIdentity = IdentityToParticipant(sender.Resource.Info.Identity.User, newSourceId);
+        private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
+        {
+            await Task.CompletedTask;
+        }
 
-            var oldIdentity = await _cacheHelper.GetAsync<Models.Participant>(ParticipantCacheKey(oldSourceId));
-            if (oldIdentity != null && !newIdentityId.Equals(oldIdentity.Id))
-            {
-                await _cacheHelper.SetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), newIdentity);
-                return;
-            }
-
-            if (string.Equals(oldSourceId, newSourceId))
-            {
-                if (oldIdentity == null)
-                    await _cacheHelper.SetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), newIdentity);
-                else
-                    return;
-            }
-
-            await _cacheHelper.DeleteAsync(ParticipantCacheKey(oldSourceId));
-            await _cacheHelper.SetAsync(ParticipantCacheKey(newSourceId), TimeSpan.FromHours(2), newIdentity);
+        private async Task UnsubscribeFromParticipantAudio(IParticipant participant)
+        {
+            await Task.CompletedTask;
         }
 
         /// <summary>
@@ -215,55 +203,13 @@ namespace EchoBot.Bot
         /// </summary>
         /// <param name="p">The p.</param>
         /// <returns><c>true</c> if XXXX, <c>false</c> otherwise.</returns>
-        private bool CheckParticipantIsUsable(IParticipant p)
+        private static bool CheckParticipantIsUsable(IParticipant p)
         {
             foreach (var i in p.Resource.Info.Identity.AdditionalData)
                 if (i.Key != "applicationInstance" && i.Value is Identity)
                     return true;
 
             return false;
-        }
-
-        private string ParticipantCacheKey(string sourceId)
-        {
-            return $"{_threadId}-{sourceId}";
-        }
-
-        private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
-        {
-            // filter the mediaStreams to see if the participant has a video send
-            var audioStream = participant.Resource.MediaStreams!.FirstOrDefault(x => x.MediaType == Modality.Audio);
-            if (audioStream != null)
-            {
-                await _cacheHelper.SetAsync(ParticipantCacheKey(audioStream.SourceId), TimeSpan.FromHours(2),
-                    IdentityToParticipant(participant.Resource.Info.Identity.User, audioStream.SourceId)).ForgetAndLogExceptionAsync(GraphLogger);
-            }
-        }
-
-        private async Task UnsubscribeFromParticipantAudio(IParticipant participant)
-        {
-            var audioStream = participant.Resource.MediaStreams!.FirstOrDefault(x => x.MediaType == Modality.Audio);
-            if (audioStream != null)
-            {
-                await _cacheHelper.DeleteAsync(ParticipantCacheKey(audioStream.SourceId)).ForgetAndLogExceptionAsync(GraphLogger);
-            }
-        }
-
-        private static Models.Participant IdentityToParticipant(Identity identity, string sourceId)
-        {
-            if (identity == null)
-            {
-                return new Models.Participant
-                {
-                    Id = sourceId,
-                    DisplayName = string.Empty
-                };
-            }
-            return new Models.Participant
-            {
-                Id = identity.Id!,
-                DisplayName = identity?.DisplayName ?? string.Empty
-            };
         }
     }
 }

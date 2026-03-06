@@ -17,7 +17,7 @@ namespace EchoBot.Bot
         /// <summary>
         /// The participants
         /// </summary>
-        internal List<IParticipant> participants;
+        internal List<IParticipant> Participants;
 
         /// <summary>
         /// The audio socket
@@ -57,7 +57,7 @@ namespace EchoBot.Bot
 
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
 
-            this.participants = [];
+            this.Participants = [];
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 
@@ -69,7 +69,7 @@ namespace EchoBot.Bot
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
             var config = ServiceLocator.GetRequiredService<IConfiguration>();
-            LanguageService = "ByteDance".Equals(config["SpeechServiceModel"]) ? new ByteDanceSpeechService(threadId) : new AzureSpeechService(threadId);
+            LanguageService = "ByteDance".Equals(config["SpeechServiceModel"]) ? new ByteDanceSpeechService(threadId, Participants) : new AzureSpeechService(threadId, Participants);
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
@@ -79,7 +79,7 @@ namespace EchoBot.Bot
         /// <returns>List&lt;IParticipant&gt;.</returns>
         public List<IParticipant> GetParticipants()
         {
-            return participants;
+            return Participants;
         }
 
         /// <summary>
