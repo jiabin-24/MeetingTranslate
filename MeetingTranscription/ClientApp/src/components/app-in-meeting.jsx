@@ -50,6 +50,7 @@ const AppInMeeting = props => {
                 </select>
                 <span>to</span>
                 <select value={targetLang} onChange={e => setTargetLang(e.target.value)}>
+                    {useByteDance && <option value="enzh">Auto Detect</option>}
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
                 </select>

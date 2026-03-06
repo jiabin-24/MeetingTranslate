@@ -34,7 +34,8 @@ namespace EchoBot.Media
         private readonly MemoryStream _recvAudio = new();
         private int _recvTime = 0;
 
-        private const int ChunkSize = 3200;
+        // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
+        private const int ChunkSize = 2560;
 
         private const string UID = "ast_csharp_client";
 
@@ -47,7 +48,7 @@ namespace EchoBot.Media
         {
             //{"zh-CN","en" },
             //{"en-US","zh" },
-            {"zhen","zhen" },
+            {"zhen","enzh" },
         };
 
         public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
@@ -75,7 +76,7 @@ namespace EchoBot.Media
 
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
-                    // Append incoming 640-byte buffer and send only when we have exactly one full ChunkSize (5 * 640).
+                    // Accumulate incoming frames into a chunk buffer and only send when we have exactly one full ChunkSize (80ms)
                     var chunkToSend = GetBatchBuffer(buffer, (int)bufferLength);
                     if (chunkToSend != null && _wsClients.Values.All(c => c.State == WebSocketState.Open) && !_sessionEnded.Task.IsCompleted)
                     {
@@ -146,7 +147,7 @@ namespace EchoBot.Media
                 // Report the source audio format as PCM so the remote service treats the binary frames as raw PCM samples.
                 SourceAudio = new Audio { Format = "pcm", Rate = 16000, Bits = 16, Channel = 1 },
                 TargetAudio = new Audio { Format = "pcm", Rate = 16000 },
-                Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = _translateTarget[sourceLang] }
+                Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = sourceLang.Equals(AUTO) ? AUTO : _translateTarget[sourceLang] }
             };
             await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
             Logger.LogInformation("StartSession sent");
@@ -227,6 +228,7 @@ namespace EchoBot.Media
                         else if (eventType == EV.Type.TranslationSubtitleEnd)
                         {
                             _recvTime = resp.StartTime;
+                            
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceText.ToString();
                             var transleted = tranlatedText.ToString();
@@ -261,7 +263,7 @@ namespace EchoBot.Media
 
                                 var partialText = sourceText.ToString();
                                 var translatedText = tranlatedText.ToString();
-                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } },
+                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText }, { _translateTarget[sourceLang], translatedText } },
                                     sourceLang, partialText, translatedText);
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);

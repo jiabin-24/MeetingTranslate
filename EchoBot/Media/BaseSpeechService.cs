@@ -177,7 +177,7 @@ namespace EchoBot.Media
 
         protected async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
         {
-            if (!sourceLang.Equals(lang))
+            if (!sourceLang.Equals(lang) && !sourceLang.Equals(AUTO))
                 return;
 
             var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, lang, out var handler) ? handler : null;
