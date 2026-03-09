@@ -194,6 +194,20 @@ export default function CaptionsPanel(props) {
         audioRef.current.srcObject = null;
     }
 
+    // When targetLang changes, ensure audio is turned off if it was enabled
+    useEffect(() => {
+        if (!audioEnabled) return;
+        (async () => {
+            try {
+                await closeRtc();
+            } catch (err) {
+                log('[closeRtc] error on targetLang change', err);
+            } finally {
+                setAudioEnabled(false);
+            }
+        })();
+    }, [targetLang]);
+
     return (
         <div className="captions-panel">
             <div className="controls">
