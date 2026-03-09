@@ -30,7 +30,7 @@ namespace EchoBot.Util
             if (await _mux.GetDatabase().KeyExistsAsync(key))
             {
                 var cacheObj = (string)await _mux.GetDatabase().StringGetAsync(key);
-                return JsonConvert.DeserializeObject<T>(cacheObj)!;
+                return cacheObj == null ? default : JsonConvert.DeserializeObject<T>(cacheObj)!;
             }
             return default;
         }

@@ -113,7 +113,7 @@ namespace EchoBot.Media
             _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
 
             // Start receive loop
-            _ = ReceiveMessage(_sessionIds[sourceLang], sourceLang);
+            _ = Task.Run(async () => await ReceiveMessage(_sessionIds[sourceLang], sourceLang));
             // Send StartSession to trigger handshake
             await StartSession(_sessionIds[sourceLang], sourceLang);
             // Wait handshake
@@ -181,6 +181,7 @@ namespace EchoBot.Media
             var sourceSb = new StringBuilder();
             var tranlatedSb = new StringBuilder();
             var wsClient = _wsClients[sourceLang];
+            var receiveTimeout = TimeSpan.FromSeconds(3);
 
             try
             {
@@ -190,7 +191,20 @@ namespace EchoBot.Media
                     WebSocketReceiveResult result;
                     do
                     {
-                        result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                        // Use a short timeout for each ReceiveAsync. If no data arrives within the timeout, reconnect.
+                        try
+                        {
+                            using var cts = new CancellationTokenSource(receiveTimeout);
+                            result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            Logger.LogWarning("Receive timeout {ReceiveTimeout} for session {sessionId}, sourceLang {sourceLang}. Reconnecting...",
+                                receiveTimeout.TotalSeconds, sessionId, sourceLang);
+
+                            await Reconnect(wsClient, sessionId, sourceLang);
+                            return;
+                        }
                         if (result.MessageType == WebSocketMessageType.Close)
                         {
                             await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None);
@@ -288,6 +302,45 @@ namespace EchoBot.Media
             catch (Exception e)
             {
                 Logger.LogError(e, "Receiver error");
+                _sessionEnded.TrySetResult(true);
+            }
+        }
+
+        private async Task Reconnect(ClientWebSocket? wsClient, string sessionId, string sourceLang)
+        {
+            // Attempt to close the current socket and establish a new one, then exit this receive loop.
+            try
+            {
+                if (wsClient.State == WebSocketState.Open || wsClient.State == WebSocketState.CloseReceived || wsClient.State == WebSocketState.CloseSent)
+                {
+                    await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "reconnect", CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Error while closing stale websocket before reconnect");
+            }
+
+            try
+            {
+                // Create a new websocket and replace the dictionary entry
+                var newClient = await CreateWsClient().ConfigureAwait(false);
+                _wsClients[sourceLang] = newClient;
+
+                // Start new receive loop and re-send StartSession to re-handshake
+                _ = Task.Run(async () => await ReceiveMessage(sessionId, sourceLang));
+                await StartSession(sessionId, sourceLang).ConfigureAwait(false);
+                // Wait handshake if caller is tracking it
+                if (_handshakeDones.TryGetValue(sourceLang, out var tcs))
+                {
+                    // Replace handshake tcs so callers wait on fresh one
+                    _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
+                    await _handshakeDones[sourceLang].Task.ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Reconnect failed for session {sessionId} sourceLang {sourceLang}", sessionId, sourceLang);
                 _sessionEnded.TrySetResult(true);
             }
         }
