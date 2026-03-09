@@ -86,7 +86,7 @@ namespace EchoBot.Media
             SendMediaBuffer?.Invoke(this, e);
         }
 
-        protected async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId)
+        protected async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId, Dictionary<string, string>? captions = null)
         {
             try
             {
@@ -95,7 +95,7 @@ namespace EchoBot.Media
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 var translated = await _translatorClient.BatchTranslateAsync(original, sourceLang, transEndpoints!, cts.Token);
 
-                await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
+                await Transcript(Util.Utilities.ConcatDictionary(translated, captions), true, offset, duration, sourceLang, original, audioId);
             }
             catch (Exception ex)
             {

@@ -228,15 +228,15 @@ namespace EchoBot.Media
                         else if (eventType == EV.Type.TranslationSubtitleEnd)
                         {
                             _recvTime = resp.StartTime;
-                            
+
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceText.ToString();
-                            var transleted = tranlatedText.ToString();
+                            var transleteDic = new Dictionary<string, string> { { _translateTarget[sourceLang], tranlatedText.ToString() } };
 
                             if (string.IsNullOrEmpty(original)) return;
 
                             Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", sourceLang, original);
-                            await BatchTranslateAsync(original, sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId);
+                            await BatchTranslateAsync(original, sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId, transleteDic);
 
                             if (_recvAudio.Length > 0)
                             {

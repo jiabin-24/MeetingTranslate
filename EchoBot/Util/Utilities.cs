@@ -106,6 +106,19 @@ namespace EchoBot.Util
                 store.Close();
             }
         }
+
+        public static Dictionary<TKey, TValue> ConcatDictionary<TKey, TValue>(this Dictionary<TKey, TValue> source, Dictionary<TKey, TValue> pairs)
+            where TKey : notnull
+        {
+            if (pairs == null)
+                return source;
+
+            foreach (var kv in pairs)
+            {
+                source[kv.Key] = kv.Value;
+            }
+            return source;
+        }
     }
 }
 
