@@ -33,7 +33,8 @@ namespace EchoBot.Media
         private int _sendLen = 0;
 
         private readonly MemoryStream _recvAudio = new();
-        private int _recvTime = 0;
+        private int _singleRecvTime = 0;
+        private int _backlogRecvTime = 0;
 
         // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
         private const int ChunkSize = 2560;
@@ -242,7 +243,7 @@ namespace EchoBot.Media
                         }
                         else if (eventType == EV.Type.TtssentenceEnd)
                         {
-                            _recvTime = resp.StartTime;
+                            _singleRecvTime = resp.StartTime;
 
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceSb.ToString();
@@ -256,7 +257,7 @@ namespace EchoBot.Media
                             var transleteDic = new Dictionary<string, string> { { detectTarLang, translatedText } };
 
                             Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", sourceLang, original);
-                            await BatchTranslateAsync(original, sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId, transleteDic);
+                            await BatchTranslateAsync(original, sourceLang, (ulong)(resp.StartTime + _backlogRecvTime), TimeSpan.FromSeconds(30), CurrentSpeakerId, transleteDic);
 
                             if (_recvAudio.Length > 0)
                             {
@@ -289,7 +290,7 @@ namespace EchoBot.Media
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
-                                await Transcript(captions, false, (ulong)_recvTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
+                                await Transcript(captions, false, (ulong)(_singleRecvTime + _backlogRecvTime), TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
                             }
                         }
                     }
@@ -337,6 +338,9 @@ namespace EchoBot.Media
                     _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
                     await _handshakeDones[sourceLang].Task.ConfigureAwait(false);
                 }
+
+                _backlogRecvTime += _singleRecvTime; // Add time of last received message to backlog time, so translated captions don't jump back in time after reconnect
+                _singleRecvTime = 0;
             }
             catch (Exception ex)
             {
