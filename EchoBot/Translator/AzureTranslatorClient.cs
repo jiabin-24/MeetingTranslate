@@ -12,17 +12,18 @@ namespace EchoBot.Translator
     public sealed class AzureTranslatorClient : ITranslatorClient
     {
         private readonly HttpClient _http;
+        private readonly TranslatorOptions _translatorOpt;
         private readonly string _endpoint;
 
         public AzureTranslatorClient(HttpClient http, IOptions<TranslatorOptions> options)
         {
             _http = http;
+            _translatorOpt = options.Value;
 
-            var translatorOpt = options.Value;
-            _endpoint = translatorOpt.Endpoint.TrimEnd('/');
+            _endpoint = _translatorOpt.Endpoint.TrimEnd('/');
 
-            _http.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", translatorOpt.Key);
-            _http.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Region", translatorOpt.Region);
+            _http.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", _translatorOpt.Key);
+            _http.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Region", _translatorOpt.Region);
         }
 
         private async Task<string> TranslateAsync(
@@ -63,6 +64,12 @@ namespace EchoBot.Translator
             Dictionary<string, string> toCategory,
             CancellationToken ct = default)
         {
+            if (!_translatorOpt.Enabled)
+            {
+                // If translation is disabled, return the original text for all target languages.
+                return toCategory.Keys.ToDictionary(to => to, to => text);
+            }
+
             // Create a translation task for each route rule
             var tasks = toCategory.Keys.ToDictionary(to => to, to => TranslateAsync(text, sourceLang, to, toCategory[to], ct));
 

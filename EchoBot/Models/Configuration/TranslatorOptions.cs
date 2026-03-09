@@ -2,6 +2,8 @@
 {
     public class TranslatorOptions
     {
+        public bool Enabled { get; set; }
+
         public string Key { get; set; }
 
         public string Region { get; set; }

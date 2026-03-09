@@ -82,6 +82,17 @@ namespace EchoBot.WebRTC
             return (null, _callConn);
         }
 
+        public static async Task<bool> EnsureGroupCallConnectionAsync(RtcSessionManager rtcSession, int? milliseconds = null)
+        {
+            if (rtcSession == null) return false;
+
+            if (milliseconds != null)
+                Thread.Sleep(milliseconds.Value);
+
+            var (msg, _) = await rtcSession.EnsureGroupCallConnectionAsync();
+            return string.IsNullOrEmpty(msg);
+        }
+
         public async Task<Room> AddRoomParticipant(AddRoomParticipant addPar)
         {
             try
