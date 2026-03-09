@@ -64,12 +64,6 @@ namespace EchoBot.Translator
             Dictionary<string, string> toCategory,
             CancellationToken ct = default)
         {
-            if (!_translatorOpt.Enabled)
-            {
-                // If translation is disabled, return the original text for all target languages.
-                return toCategory.Keys.ToDictionary(to => to, to => text);
-            }
-
             // Create a translation task for each route rule
             var tasks = toCategory.Keys.ToDictionary(to => to, to => TranslateAsync(text, sourceLang, to, toCategory[to], ct));
 

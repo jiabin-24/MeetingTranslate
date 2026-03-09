@@ -107,7 +107,7 @@ namespace EchoBot.Util
             }
         }
 
-        public static Dictionary<TKey, TValue> ConcatDictionary<TKey, TValue>(this Dictionary<TKey, TValue> source, Dictionary<TKey, TValue> pairs)
+        public static Dictionary<TKey, TValue> ConcatDictionary<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue> pairs)
             where TKey : notnull
         {
             if (pairs == null)

@@ -1,6 +1,7 @@
 ﻿using Data.Speech.Ast;
 using Data.Speech.Common;
 using Data.Speech.Understanding;
+using EchoBot.Constants;
 using EchoBot.Models.Configuration;
 using EchoBot.Util;
 using Google.Protobuf;
@@ -177,8 +178,8 @@ namespace EchoBot.Media
         private async Task ReceiveMessage(string sessionId, string sourceLang)
         {
             var buffer = new byte[64 * 1024];
-            var sourceText = new StringBuilder();
-            var tranlatedText = new StringBuilder();
+            var sourceSb = new StringBuilder();
+            var tranlatedSb = new StringBuilder();
             var wsClient = _wsClients[sourceLang];
 
             try
@@ -225,15 +226,20 @@ namespace EchoBot.Media
                             Logger.LogInformation("Session finished");
                             _sessionEnded.TrySetResult(true);
                         }
-                        else if (eventType == EV.Type.TranslationSubtitleEnd)
+                        else if (eventType == EV.Type.TtssentenceEnd)
                         {
                             _recvTime = resp.StartTime;
 
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
-                            var original = sourceText.ToString();
-                            var transleteDic = new Dictionary<string, string> { { _translateTarget[sourceLang], tranlatedText.ToString() } };
+                            var original = sourceSb.ToString();
+                            if (string.IsNullOrEmpty(original))
+                                return;
 
-                            if (string.IsNullOrEmpty(original)) return;
+                            var translatedText = tranlatedSb.ToString();
+                            var configTarLang = _translateTarget[sourceLang];
+                            // 火山引擎使用AUTO（zhen）时不会将识别的语言返回，所以需要自己检测是中文还是英文，以决定翻译的目标语言
+                            var detectTarLang = AUTO.Equals(sourceLang) ? AppConstants.LangCode(LangDetect.DetectZhEn(translatedText)) : configTarLang;
+                            var transleteDic = new Dictionary<string, string> { { detectTarLang, translatedText } };
 
                             Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", sourceLang, original);
                             await BatchTranslateAsync(original, sourceLang, (ulong)resp.StartTime, TimeSpan.FromSeconds(30), CurrentSpeakerId, transleteDic);
@@ -241,13 +247,14 @@ namespace EchoBot.Media
                             if (_recvAudio.Length > 0)
                             {
                                 //var pcm16 = ResamplePcm16(_recvAudio.ToArray(), 24000, 16000);
-                                await TextToSpeech(_recvAudio.ToArray(), _translateTarget[sourceLang], sourceLang, CurrentSpeakerId);
+                                await TextToSpeech(_recvAudio.ToArray(), detectTarLang, sourceLang, CurrentSpeakerId);
+
                                 _recvAudio.SetLength(0); // 清空缓冲
                                 _recvAudio.Position = 0;
                             }
 
-                            sourceText.Clear();
-                            tranlatedText.Clear();
+                            sourceSb.Clear();
+                            tranlatedSb.Clear();
                         }
                         else
                         {
@@ -259,16 +266,16 @@ namespace EchoBot.Media
                             }
                             if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
-                                (resp.Event == EV.Type.SourceSubtitleResponse ? sourceText : tranlatedText).Append(resp.Text);
+                                (resp.Event == EV.Type.SourceSubtitleResponse ? sourceSb : tranlatedSb).Append(resp.Text);
 
-                                var partialText = sourceText.ToString();
-                                var translatedText = tranlatedText.ToString();
-                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText }, { _translateTarget[sourceLang], translatedText } },
+                                var partialText = sourceSb.ToString();
+                                var translatedText = tranlatedSb.ToString();
+                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } },
                                     sourceLang, partialText, translatedText);
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
-                                _ = Transcript(captions, false, (ulong)_recvTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
+                                await Transcript(captions, false, (ulong)_recvTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
                             }
                         }
                     }

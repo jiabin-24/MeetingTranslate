@@ -20,5 +20,12 @@
             { "zh-CN","zh-Hans" },
             { "en-US","en" },
         };
+
+        public static string LangCode(LangGuess lang) => lang switch
+        {
+            LangGuess.Chinese => "zh-Hans",
+            LangGuess.English => "en",
+            _ => "zh-Hans"
+        };
     }
 }

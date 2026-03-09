@@ -24,7 +24,7 @@ const AppInMeeting = props => {
         return useByteDance ? 'zhen' : localStorage.getItem('sourceLang') || 'zh-Hans';
     });
     const [targetLang, setTargetLang] = useState(() => {
-        return useByteDance ? 'enzh' : localStorage.getItem('targetLang') || 'en';
+        return localStorage.getItem('targetLang') || 'en';
     });
 
     useEffect(() => {
@@ -40,7 +40,7 @@ const AppInMeeting = props => {
 
     return (
         <div className="captions-panel-container">
-            {useByteDance ? null : (<div className="language-switcher" >
+            <div className="language-switcher" >
                 <span>Translate from</span>
                 <select value={sourceLang} onChange={e => setSourceLang(e.target.value)} disabled={useByteDance}>
                     {/* <option value="">Auto Detect</option> */}
@@ -49,12 +49,12 @@ const AppInMeeting = props => {
                     <option value="en">English</option>
                 </select>
                 <span>to</span>
-                <select value={targetLang} onChange={e => setTargetLang(e.target.value)} disabled={useByteDance}>
-                    {useByteDance && <option value="enzh">Auto Detect</option>}
+                <select value={targetLang} onChange={e => setTargetLang(e.target.value)}>
+                    {/* {useByteDance && <option value="enzh">Auto Detect</option>} */}
                     <option value="zh-Hans">中文 (Chinese)</option>
                     <option value="en">English</option>
                 </select>
-            </div>)}
+            </div>
             {meetingId ? (
                 <CaptionsPanel
                     url={wsUrl}

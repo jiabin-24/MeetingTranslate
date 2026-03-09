@@ -91,11 +91,19 @@ namespace EchoBot.Media
             try
             {
                 var transEndpoints = TranslatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
+                Dictionary<string, string> translated;
+                if (!TranslatorOptions.Enabled)
+                {
+                    // If translation is disabled, return the original text for all target languages.
+                    translated = Util.Utilities.ConcatDictionary(transEndpoints.Keys.ToDictionary(to => to, to => original), captions);
+                }
+                else
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    translated = Util.Utilities.ConcatDictionary(captions ?? [], await _translatorClient.BatchTranslateAsync(original, sourceLang, transEndpoints!, cts.Token));
+                }
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                var translated = await _translatorClient.BatchTranslateAsync(original, sourceLang, transEndpoints!, cts.Token);
-
-                await Transcript(Util.Utilities.ConcatDictionary(translated, captions), true, offset, duration, sourceLang, original, audioId);
+                await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
             }
             catch (Exception ex)
             {
