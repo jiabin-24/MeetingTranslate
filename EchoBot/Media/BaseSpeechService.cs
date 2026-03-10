@@ -92,15 +92,15 @@ namespace EchoBot.Media
             {
                 var transEndpoints = TranslatorOptions.Routing.ToDictionary(r => r.Key, r => r.Value.TryGetValue(sourceLang, out string? value) ? value : null);
                 Dictionary<string, string> translated;
-                if (!TranslatorOptions.Enabled)
-                {
-                    // If translation is disabled, return the original text for all target languages.
-                    translated = Util.Utilities.ConcatDictionary(transEndpoints.Keys.ToDictionary(to => to, to => original), captions);
-                }
-                else
+                if (TranslatorOptions.Enabled)
                 {
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                     translated = Util.Utilities.ConcatDictionary(captions ?? [], await _translatorClient.BatchTranslateAsync(original, sourceLang, transEndpoints!, cts.Token));
+                }
+                else
+                {
+                    // If translation is disabled, return the original text for all target languages.
+                    translated = Util.Utilities.ConcatDictionary(transEndpoints.Keys.ToDictionary(to => to, to => original), captions);
                 }
 
                 await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
@@ -243,7 +243,7 @@ namespace EchoBot.Media
             return false;
         }
 
-        protected Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText, string? translateText = null)
+        protected Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)
         {
             var dict = captions.ToDictionary(k => k.Key, v => v.Value);
             dict[sourceLang] = sourceText; // 注意：原文语言可能就是 zh-CN 或 en-US，看你的识别输出
@@ -253,7 +253,7 @@ namespace EchoBot.Media
             TranslatorOptions.Routing.Keys.ForEach(lang =>
             {
                 if (!dict.ContainsKey(lang))
-                    dict[lang] = translateText ?? $"Translating{new string('.', _placeHolderIndex % 4)}";
+                    dict[lang] = $"Translating{new string('.', _placeHolderIndex % 4)}";
             });
             return dict;
         }

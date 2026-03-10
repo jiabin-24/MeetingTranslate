@@ -287,8 +287,14 @@ namespace EchoBot.Media
 
                                 var partialText = sourceSb.ToString();
                                 var translatedText = tranlatedSb.ToString();
-                                var captions = BuildTextDictionary(new Dictionary<string, string> { { sourceLang, partialText } },
-                                    sourceLang, partialText, translatedText);
+
+                                var partialLang = AppConstants.LangCode(LangDetect.DetectZhEn(partialText));
+                                var translatedLang = AppConstants.LangCode(LangDetect.DetectZhEn(translatedText));
+                                var langDic = new Dictionary<string, string> { { sourceLang, partialText } };
+                                langDic[partialLang] = partialText;
+                                langDic[translatedLang] = translatedText;
+
+                                var captions = BuildTextDictionary(langDic, sourceLang, partialText);
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
