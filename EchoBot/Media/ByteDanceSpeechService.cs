@@ -1,4 +1,5 @@
-﻿using Data.Speech.Ast;
+﻿using Azure.AI.Agents.Persistent;
+using Data.Speech.Ast;
 using Data.Speech.Common;
 using Data.Speech.Understanding;
 using EchoBot.Constants;
@@ -35,6 +36,7 @@ namespace EchoBot.Media
         private readonly MemoryStream _recvAudio = new();
         private int _singleRecvTime = 0;
         private int _backlogRecvTime = 0;
+        private bool  _finishFlag = false;
 
         // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
         private const int ChunkSize = 2560;
@@ -200,10 +202,10 @@ namespace EchoBot.Media
                         }
                         catch (OperationCanceledException)
                         {
-                            Logger.LogWarning("Receive timeout {ReceiveTimeout} for session {sessionId}, sourceLang {sourceLang}. Reconnecting...",
+                            Logger.LogWarning("Receive timeout {ReceiveTimeout}s for session {sessionId}, sourceLang {sourceLang}. Reconnecting...",
                                 receiveTimeout.TotalSeconds, sessionId, sourceLang);
 
-                            await Reconnect(wsClient, sessionId, sourceLang);
+                            await Reconnect(wsClient, sourceLang);
                             return;
                         }
                         if (result.MessageType == WebSocketMessageType.Close && wsClient.State == WebSocketState.Open)
@@ -299,6 +301,8 @@ namespace EchoBot.Media
                         Logger.LogError(ex, "Parse error");
                     }
                 }
+
+                Logger.LogWarning("Session {sessionId} ended", sessionId);
             }
             catch (Exception e)
             {
@@ -307,7 +311,7 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task Reconnect(ClientWebSocket? wsClient, string sessionId, string sourceLang)
+        private async Task Reconnect(ClientWebSocket? wsClient, string sourceLang)
         {
             // Attempt to close the current socket and establish a new one, then exit this receive loop.
             try
@@ -324,9 +328,12 @@ namespace EchoBot.Media
 
             try
             {
+                Thread.Sleep(5000); // Wait a moment before reconnecting to avoid tight reconnect loops
                 // Create a new websocket and replace the dictionary entry
+                var sessionId = Guid.NewGuid().ToString();
                 var newClient = await CreateWsClient().ConfigureAwait(false);
                 _wsClients[sourceLang] = newClient;
+                _sessionIds[sourceLang] = sessionId;
 
                 // Start new receive loop and re-send StartSession to re-handshake
                 _ = ReceiveMessage(sessionId, sourceLang);
@@ -341,10 +348,13 @@ namespace EchoBot.Media
 
                 _backlogRecvTime += _singleRecvTime; // Add time of last received message to backlog time, so translated captions don't jump back in time after reconnect
                 _singleRecvTime = 0;
+
+                if (_finishFlag)
+                    await FinishSession(sessionId, sourceLang);
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Reconnect failed for session {sessionId} sourceLang {sourceLang}", sessionId, sourceLang);
+                Logger.LogError(ex, "Reconnect failed for session {sessionId} sourceLang {sourceLang}", _sessionIds[sourceLang], sourceLang);
                 _sessionEnded.TrySetResult(true);
             }
         }
@@ -388,6 +398,7 @@ namespace EchoBot.Media
         {
             await base.ShutDownAsync().ConfigureAwait(false);
             await Task.WhenAll(_translateTarget.Keys.Select(l => FinishSession(_sessionIds[l], l))).ConfigureAwait(false);
+            _finishFlag = true;
         }
     }
 }

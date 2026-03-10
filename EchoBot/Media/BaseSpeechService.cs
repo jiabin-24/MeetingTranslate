@@ -189,7 +189,7 @@ namespace EchoBot.Media
                 return;
 
             var rtcSessionManager = RtcSessionManagerRegistry.TryGet(ThreadId, lang, out var manager) ? manager : null;
-            await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager);
+            _ = RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager);
 
             var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, lang, out var handler) ? handler : null;
             if (acsMediaWebSocket != null)

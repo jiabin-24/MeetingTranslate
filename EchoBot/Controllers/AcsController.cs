@@ -33,7 +33,7 @@ namespace EchoBot.Controllers
         public async Task<bool> EnsureGroupCallConnectionAsync(string threadId, string targetLang)
         {
             var rtcSessionManager = RtcSessionManagerRegistry.TryGet(threadId, targetLang, out var manager) ? manager : null;
-            return await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager, 2000);
+            return await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager, 3000);
         }
     }
 }
