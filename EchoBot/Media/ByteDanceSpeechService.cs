@@ -114,7 +114,7 @@ namespace EchoBot.Media
             _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
 
             // Start receive loop
-            _ = Task.Run(async () => await ReceiveMessage(_sessionIds[sourceLang], sourceLang));
+            _ = ReceiveMessage(_sessionIds[sourceLang], sourceLang);
             // Send StartSession to trigger handshake
             await StartSession(_sessionIds[sourceLang], sourceLang);
             // Wait handshake
@@ -206,7 +206,7 @@ namespace EchoBot.Media
                             await Reconnect(wsClient, sessionId, sourceLang);
                             return;
                         }
-                        if (result.MessageType == WebSocketMessageType.Close)
+                        if (result.MessageType == WebSocketMessageType.Close && wsClient.State == WebSocketState.Open)
                         {
                             await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None);
                             _sessionEnded.TrySetResult(true);
@@ -329,7 +329,7 @@ namespace EchoBot.Media
                 _wsClients[sourceLang] = newClient;
 
                 // Start new receive loop and re-send StartSession to re-handshake
-                _ = Task.Run(async () => await ReceiveMessage(sessionId, sourceLang));
+                _ = ReceiveMessage(sessionId, sourceLang);
                 await StartSession(sessionId, sourceLang).ConfigureAwait(false);
                 // Wait handshake if caller is tracking it
                 if (_handshakeDones.TryGetValue(sourceLang, out var tcs))
