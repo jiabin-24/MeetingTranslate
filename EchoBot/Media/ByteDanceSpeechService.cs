@@ -1,5 +1,4 @@
-﻿using Azure.AI.Agents.Persistent;
-using Data.Speech.Ast;
+﻿using Data.Speech.Ast;
 using Data.Speech.Common;
 using Data.Speech.Understanding;
 using EchoBot.Constants;
@@ -9,6 +8,7 @@ using Google.Protobuf;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Skype.Bots.Media;
+using NAudio.Wave;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -36,7 +36,9 @@ namespace EchoBot.Media
         private readonly MemoryStream _recvAudio = new();
         private int _singleRecvTime = 0;
         private int _backlogRecvTime = 0;
-        private bool  _finishFlag = false;
+        private bool _finishFlag = false;
+        private int _convertLeftoverCount = 0;
+        private readonly byte[] _convertLeftoverBuffer = new byte[8];
 
         // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
         private const int ChunkSize = 2560;
@@ -79,6 +81,12 @@ namespace EchoBot.Media
                 {
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
+                    var converted = Utilities.ConvertToPcm16Mono16k(buffer, (int)bufferLength, new WaveFormat(16000, 16, 1), ref _convertLeftoverCount, _convertLeftoverBuffer);
+                    if (converted.Length == 0)
+                        return;
+
+                    buffer = converted;
+                    bufferLength = converted.Length;
 
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
@@ -186,7 +194,7 @@ namespace EchoBot.Media
             var sourceSb = new StringBuilder();
             var tranlatedSb = new StringBuilder();
             var wsClient = _wsClients[sourceLang];
-            var receiveTimeout = TimeSpan.FromSeconds(2);
+            var receiveTimeout = TimeSpan.FromSeconds(10);
 
             try
             {
@@ -252,7 +260,11 @@ namespace EchoBot.Media
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceSb.ToString();
                             if (string.IsNullOrEmpty(original))
-                                return;
+                            {
+                                sourceSb.Clear();
+                                tranlatedSb.Clear();
+                                continue;
+                            }
 
                             var translatedText = tranlatedSb.ToString();
                             var configTarLang = _translateTarget[sourceLang];
@@ -283,7 +295,7 @@ namespace EchoBot.Media
                             {
                                 await _recvAudio.WriteAsync(resp.Data.ToByteArray());
                             }
-                            if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
+                            if (!string.IsNullOrWhiteSpace(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
                                 (resp.Event == EV.Type.SourceSubtitleResponse ? sourceSb : tranlatedSb).Append(resp.Text);
 
@@ -336,23 +348,22 @@ namespace EchoBot.Media
 
             try
             {
-                Thread.Sleep(1000); // Wait a moment before reconnecting to avoid tight reconnect loops
+                await Task.Delay(1000).ConfigureAwait(false); // Wait a moment before reconnecting to avoid tight reconnect loops
                 // Create a new websocket and replace the dictionary entry
                 var sessionId = Guid.NewGuid().ToString();
                 var newClient = await CreateWsClient().ConfigureAwait(false);
                 _wsClients[sourceLang] = newClient;
                 _sessionIds[sourceLang] = sessionId;
 
+                // Replace handshake tcs before StartSession so SessionStarted can complete the correct task
+                var handshakeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _handshakeDones[sourceLang] = handshakeTcs;
+
                 // Start new receive loop and re-send StartSession to re-handshake
                 _ = ReceiveMessage(sessionId, sourceLang);
                 await StartSession(sessionId, sourceLang).ConfigureAwait(false);
-                // Wait handshake if caller is tracking it
-                if (_handshakeDones.TryGetValue(sourceLang, out var tcs))
-                {
-                    // Replace handshake tcs so callers wait on fresh one
-                    _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
-                    await _handshakeDones[sourceLang].Task.ConfigureAwait(false);
-                }
+                // Wait handshake
+                await handshakeTcs.Task.ConfigureAwait(false);
 
                 _backlogRecvTime += _singleRecvTime; // Add time of last received message to backlog time, so translated captions don't jump back in time after reconnect
                 _singleRecvTime = 0;

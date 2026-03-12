@@ -1,6 +1,7 @@
 ﻿using Microsoft.CognitiveServices.Speech;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Skype.Bots.Media;
+using NAudio.Wave;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 
@@ -78,6 +79,96 @@ namespace EchoBot.Util
 
             logger.LogTrace($"created {audioMediaBuffers.Count} AudioMediaBuffers");
             return audioMediaBuffers;
+        }
+
+        public static byte[] ConvertToPcm16Mono16k(byte[] input, int bytesRecorded, WaveFormat format, ref int leftoverCount, byte[] leftoverBuffer)
+        {
+            if (bytesRecorded <= 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            var bitsPerSample = format.BitsPerSample;
+            var channels = Math.Max(1, format.Channels);
+            var sampleRate = format.SampleRate;
+            var isFloat = format.Encoding == WaveFormatEncoding.IeeeFloat && bitsPerSample == 32;
+            var bytesPerSample = bitsPerSample / 8;
+            var frameSize = bytesPerSample * channels;
+
+            if (frameSize <= 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            var merged = new byte[leftoverCount + bytesRecorded];
+            if (leftoverCount > 0)
+            {
+                Buffer.BlockCopy(leftoverBuffer, 0, merged, 0, leftoverCount);
+            }
+
+            Buffer.BlockCopy(input, 0, merged, leftoverCount, bytesRecorded);
+
+            var totalFrames = merged.Length / frameSize;
+            var remainingBytes = merged.Length - (totalFrames * frameSize);
+            if (remainingBytes > 0)
+            {
+                Buffer.BlockCopy(merged, merged.Length - remainingBytes, leftoverBuffer, 0, remainingBytes);
+            }
+
+            leftoverCount = remainingBytes;
+            if (totalFrames == 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            var mono = new float[totalFrames];
+            for (int frame = 0; frame < totalFrames; frame++)
+            {
+                float sum = 0;
+                var frameOffset = frame * frameSize;
+                for (int ch = 0; ch < channels; ch++)
+                {
+                    var sampleOffset = frameOffset + (ch * bytesPerSample);
+                    float sample = 0;
+                    if (isFloat)
+                    {
+                        sample = BitConverter.ToSingle(merged, sampleOffset);
+                    }
+                    else if (bitsPerSample == 16)
+                    {
+                        sample = BitConverter.ToInt16(merged, sampleOffset) / 32768f;
+                    }
+
+                    sum += sample;
+                }
+
+                mono[frame] = sum / channels;
+            }
+
+            var outSamples = (int)Math.Round((double)mono.Length * 16000 / sampleRate);
+            if (outSamples <= 0)
+            {
+                return Array.Empty<byte>();
+            }
+
+            var output = new byte[outSamples * 2];
+            for (int i = 0; i < outSamples; i++)
+            {
+                var srcPos = (double)i * sampleRate / 16000;
+                var srcIdx = (int)srcPos;
+                var frac = srcPos - srcIdx;
+
+                var s0 = mono[Math.Min(srcIdx, mono.Length - 1)];
+                var s1 = mono[Math.Min(srcIdx + 1, mono.Length - 1)];
+                var sample = s0 + ((float)frac * (s1 - s0));
+                sample = Math.Clamp(sample, -1.0f, 1.0f);
+
+                var pcm = (short)Math.Round(sample * short.MaxValue);
+                output[i * 2] = (byte)(pcm & 0xff);
+                output[(i * 2) + 1] = (byte)((pcm >> 8) & 0xff);
+            }
+
+            return output;
         }
 
         /// <summary>
