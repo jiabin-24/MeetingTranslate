@@ -41,6 +41,8 @@ namespace EchoBot.Media
         // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
         private const int ChunkSize = 2560;
 
+        private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
+
         private const string UID = "ast_csharp_client";
 
         protected override string AUTO => "zhen";
@@ -93,7 +95,7 @@ namespace EchoBot.Media
                                 SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(chunkToSend) }
                             };
 
-                            return _wsClients[l].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
+                            return _wsClients[l].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
                         });
                         await Task.WhenAll(tasks).ConfigureAwait(false);
                         await Task.Delay(10);
@@ -132,7 +134,7 @@ namespace EchoBot.Media
             wsClient.Options.SetRequestHeader("X-Api-Connect-Id", Guid.NewGuid().ToString());
 
             var wsUrl = new Uri(new Uri(_byteDanceSettings.Host + "/"), _byteDanceSettings.Endpoint);
-            await wsClient.ConnectAsync(wsUrl, CancellationToken.None);
+            await wsClient.ConnectAsync(wsUrl, new CancellationTokenSource(DefaultTimeout).Token);
 
             Logger.LogInformation("WebSocket connected");
 
@@ -153,7 +155,7 @@ namespace EchoBot.Media
                 TargetAudio = new Audio { Format = "pcm", Rate = 16000 },
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = sourceLang.Equals(AUTO) ? AUTO : _translateTarget[sourceLang] }
             };
-            await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
+            await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
             Logger.LogInformation("StartSession sent");
         }
 
@@ -168,14 +170,14 @@ namespace EchoBot.Media
                     RequestMeta = new RequestMeta { SessionID = sessionId },
                     Event = EV.Type.FinishSession
                 };
-                await wsClient.SendAsync(new ArraySegment<byte>(finishReq.ToByteArray()), WebSocketMessageType.Binary, true, CancellationToken.None);
+                await wsClient.SendAsync(new ArraySegment<byte>(finishReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
 
                 _sessionEnded.TrySetResult(true);
                 Logger.LogInformation("FinishSession sent");
             }
 
             if (wsClient.State == WebSocketState.Open)
-                await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Session completed", CancellationToken.None);
+                await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Session completed", new CancellationTokenSource(DefaultTimeout).Token);
         }
 
         private async Task ReceiveMessage(string sessionId, string sourceLang)
@@ -184,7 +186,7 @@ namespace EchoBot.Media
             var sourceSb = new StringBuilder();
             var tranlatedSb = new StringBuilder();
             var wsClient = _wsClients[sourceLang];
-            var receiveTimeout = TimeSpan.FromSeconds(3);
+            var receiveTimeout = TimeSpan.FromSeconds(2);
 
             try
             {
@@ -210,7 +212,7 @@ namespace EchoBot.Media
                         }
                         if (result.MessageType == WebSocketMessageType.Close && wsClient.State == WebSocketState.Open)
                         {
-                            await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None);
+                            await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", new CancellationTokenSource(DefaultTimeout).Token);
                             _sessionEnded.TrySetResult(true);
                             return;
                         }
@@ -324,7 +326,7 @@ namespace EchoBot.Media
             {
                 if (wsClient.State == WebSocketState.Open || wsClient.State == WebSocketState.CloseReceived || wsClient.State == WebSocketState.CloseSent)
                 {
-                    await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "reconnect", CancellationToken.None).ConfigureAwait(false);
+                    await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "reconnect", new CancellationTokenSource(DefaultTimeout).Token).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
@@ -334,7 +336,7 @@ namespace EchoBot.Media
 
             try
             {
-                Thread.Sleep(5000); // Wait a moment before reconnecting to avoid tight reconnect loops
+                Thread.Sleep(1000); // Wait a moment before reconnecting to avoid tight reconnect loops
                 // Create a new websocket and replace the dictionary entry
                 var sessionId = Guid.NewGuid().ToString();
                 var newClient = await CreateWsClient().ConfigureAwait(false);
