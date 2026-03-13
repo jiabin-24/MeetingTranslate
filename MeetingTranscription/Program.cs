@@ -118,7 +118,7 @@ static class Program
         });
 
         // WebSocket endpoint that ACS will connect to (configure this URL in MediaStreamingOptions.TransportUri)
-        app.Map("/ws/media", async (HttpContext context, string threadId, string targetLang) =>
+        app.Map("/ws/media", async (HttpContext context) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -127,10 +127,18 @@ static class Program
                 return;
             }
 
+            var threadId = context.Request.Query["threadId"].ToString();
+            var targetLang = context.Request.Query["targetLang"].ToString();
+            if (string.IsNullOrWhiteSpace(threadId) || string.IsNullOrWhiteSpace(targetLang))
+            {
+                context.Response.StatusCode = 400;
+                await context.Response.WriteAsync("Missing threadId or targetLang");
+                return;
+            }
+
             using var ws = await context.WebSockets.AcceptWebSocketAsync();
-            var handler = new AcsMediaWebSocketHandler();
-            AcsWebSocketHandlerRegistry.Register(threadId, targetLang, handler);
-            await handler.RunAsync(ws, context.RequestAborted);
+            var handler = new AcsMediaWebSocketHandler(threadId, targetLang);
+            await AcsWebSocketHandlerRegistry.Register(threadId, targetLang, handler).RunAsync(ws, context.RequestAborted);
         });
 
         app.UseSpa(spa =>

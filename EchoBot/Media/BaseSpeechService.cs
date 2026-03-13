@@ -189,13 +189,17 @@ namespace EchoBot.Media
                 return;
 
             var rtcSessionManager = RtcSessionManagerRegistry.TryGet(ThreadId, lang, out var manager) ? manager : null;
-            _ = RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager);
+            if (!await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager))
+                return;
 
-            var acsMediaWebSocket = AcsWebSocketHandlerRegistry.TryGet(ThreadId, lang, out var handler) ? handler : null;
-            if (acsMediaWebSocket != null)
-            {
-                await acsMediaWebSocket.PushTtsFrameAsync(pcm, CancellationToken.None);
-            }
+            var acsMediaWebSocket = await AcsWebSocketHandlerRegistry.WaitForHandlerAsync(ThreadId, lang, TimeSpan.FromSeconds(10));
+            if (acsMediaWebSocket == null)
+                return;
+
+            if (!await acsMediaWebSocket.WaitForTtsWriterAsync(TimeSpan.FromSeconds(10)))
+                return;
+
+            await acsMediaWebSocket.PushTtsFrameAsync(pcm, CancellationToken.None);
         }
 
         // Compute RMS energy from a 16-bit PCM buffer

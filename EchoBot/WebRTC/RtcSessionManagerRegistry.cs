@@ -12,10 +12,11 @@ namespace EchoBot.WebRTC
             _registry[GetKey(threadId, targetLang)] = manager;
         }
 
-        public static void Unregister(string threadId, string targetLang)
+        public static RtcSessionManager Unregister(string threadId, string targetLang)
         {
-            if (threadId == null) return;
-            _registry.TryRemove(GetKey(threadId, targetLang), out _);
+            if (threadId == null) return null;
+            _registry.TryRemove(GetKey(threadId, targetLang), out var manager);
+            return manager;
         }
 
         public static List<RtcSessionManager> UnregisterByThreadId(string threadId)

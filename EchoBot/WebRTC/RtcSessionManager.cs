@@ -1,4 +1,5 @@
-﻿using Azure.Communication;
+﻿using Azure.AI.Agents.Persistent;
+using Azure.Communication;
 using Azure.Communication.CallAutomation;
 using Azure.Communication.Identity;
 using Azure.Communication.Rooms;
@@ -26,20 +27,27 @@ namespace EchoBot.WebRTC
 
         private CallConnection? _callConn;
 
+        public string ThreadId { get; set; }
+
+        public string TargetLang { get; set; }
+
         public RtcSessionManager(string threadId, string targetLang)
         {
             _cache = ServiceLocator.GetRequiredService<CacheHelper>();
             _automationClient = ServiceLocator.GetRequiredService<CallAutomationClient>();
             _logger = ServiceLocator.GetRequiredService<ILogger<RtcSessionManager>>();
             _key = $"{threadId}:{targetLang}";
-
+            
             var config = ServiceLocator.GetRequiredService<IConfiguration>();
             _callback = new($"{config["AppBaseUrl"]}/api/acs/callback");
             _acsConnectionString = config["ACSConnectionString"];
             _mediaWebSocketUri = new($"{config["AppBaseUrl"].Replace("https", "wss")}/ws/media?threadId={threadId}&targetLang={targetLang}");
+
+            ThreadId = threadId;
+            TargetLang = targetLang;
         }
 
-        public async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync()
+        private async Task<(string?, CallConnection)> EnsureGroupCallConnectionAsync()
         {
             if (_callConn != null)
                 return (null, _callConn);
@@ -71,6 +79,8 @@ namespace EchoBot.WebRTC
                 MediaStreamingOptions = mediaStreamingOptions
             };
 
+            _logger.LogInformation("ConnectCallAsync start. roomId={roomId}, callback={callback}, mediaUri={mediaUri}", cachedRoomId, _callback, _mediaWebSocketUri);
+
             ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
             cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
 
@@ -82,12 +92,9 @@ namespace EchoBot.WebRTC
             return (null, _callConn);
         }
 
-        public static async Task<bool> EnsureGroupCallConnectionAsync(RtcSessionManager rtcSession, int? milliseconds = null)
+        public static async Task<bool> EnsureGroupCallConnectionAsync(RtcSessionManager rtcSession)
         {
             if (rtcSession == null) return false;
-
-            if (milliseconds != null)
-                Thread.Sleep(milliseconds.Value);
 
             var (msg, _) = await rtcSession.EnsureGroupCallConnectionAsync();
             return string.IsNullOrEmpty(msg);

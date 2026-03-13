@@ -260,11 +260,7 @@ namespace EchoBot.Media
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceSb.ToString();
                             if (string.IsNullOrEmpty(original))
-                            {
-                                sourceSb.Clear();
-                                tranlatedSb.Clear();
                                 continue;
-                            }
 
                             var translatedText = tranlatedSb.ToString();
                             var configTarLang = _translateTarget[sourceLang];
@@ -277,8 +273,7 @@ namespace EchoBot.Media
 
                             if (_recvAudio.Length > 0)
                             {
-                                //var pcm16 = ResamplePcm16(_recvAudio.ToArray(), 24000, 16000);
-                                await TextToSpeech(_recvAudio.ToArray(), detectTarLang, sourceLang, CurrentSpeakerId);
+                                _ = TextToSpeech(_recvAudio.ToArray(), detectTarLang, sourceLang, CurrentSpeakerId);
 
                                 _recvAudio.SetLength(0); // 清空缓冲
                                 _recvAudio.Position = 0;
@@ -295,7 +290,7 @@ namespace EchoBot.Media
                             {
                                 await _recvAudio.WriteAsync(resp.Data.ToByteArray());
                             }
-                            if (!string.IsNullOrWhiteSpace(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
+                            if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
                                 (resp.Event == EV.Type.SourceSubtitleResponse ? sourceSb : tranlatedSb).Append(resp.Text);
 

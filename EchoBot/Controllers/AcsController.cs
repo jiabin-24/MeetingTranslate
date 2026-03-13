@@ -8,10 +8,20 @@ namespace EchoBot.Controllers
     [Route("api/[controller]")]
     public class AcsController : ControllerBase
     {
-        [HttpPost("callback")]
-        public IActionResult Callback()
+        private readonly ILogger<AcsController> _logger;
+
+        public AcsController(ILogger<AcsController> logger)
         {
-            // 回调占位：生产中可解析 CloudEvents 并根据状态驱动流程
+            _logger = logger;
+        }
+
+        [HttpPost("callback")]
+        public async Task<IActionResult> Callback()
+        {
+            using var sr = new StreamReader(Request.Body);
+            var body = await sr.ReadToEndAsync();
+            _logger.LogInformation("ACS callback received. Headers: {headers}; Body: {body}", string.Join(";", Request.Headers.Select(h => $"{h.Key}={h.Value}")), body);
+
             return Ok();
         }
 
@@ -27,13 +37,6 @@ namespace EchoBot.Controllers
 
             var roomParticipant = await rtcSessionManager.AddRoomParticipant(addRoomPart);
             return roomParticipant;
-        }
-
-        [HttpGet("ensureGroupCallConnectionAsync")]
-        public async Task<bool> EnsureGroupCallConnectionAsync(string threadId, string targetLang)
-        {
-            var rtcSessionManager = RtcSessionManagerRegistry.TryGet(threadId, targetLang, out var manager) ? manager : null;
-            return await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager, 3000);
         }
     }
 }

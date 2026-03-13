@@ -113,13 +113,6 @@ export default function CaptionsPanel(props) {
                     });
                 } catch { }
             }
-
-            await fetch(`${API_BASE}/api/acs/ensureGroupCallConnectionAsync?threadId=${encodeURIComponent(meetingId)}&targetLang=${encodeURIComponent(targetLang)}`, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                mode: 'cors',
-                credentials: 'include'
-            });
         } catch (err) {
             log(err);
         }

@@ -1,12 +1,24 @@
 ﻿using Azure.Communication.CallAutomation;
 using EchoBot.Util;
+using EchoBot.WebRTC;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading.Channels;
 
-public sealed class AcsMediaWebSocketHandler()
+public sealed class AcsMediaWebSocketHandler
 {
     private readonly ILogger _logger = ServiceLocator.GetRequiredService<ILogger<AcsMediaWebSocketHandler>>();
+    private TaskCompletionSource<bool> _ttsWriterReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly string _threadId;
+
+    private readonly string _targetLang;
+
+    public AcsMediaWebSocketHandler(string threadId, string targetLang)
+    {
+        _threadId = threadId;
+        _targetLang = targetLang;
+    }
 
     // Channel writer exposed so external producers (TTS) can push PCM bytes into the outbound pipeline.
     // The writer is created per active call/connection when AudioMetadata arrives.
@@ -63,6 +75,7 @@ public sealed class AcsMediaWebSocketHandler()
                         // Create a channel for external TTS producers to push PCM data.
                         var channel = Channel.CreateUnbounded<byte[]>();
                         _ttsWriter = channel.Writer;
+                        _ttsWriterReady.TrySetResult(true);
 
                         // Start send loop which will consume from the channel and send frames to ACS.
                         sendLoop ??= Task.Run(() => SendGeneratedAudioAsync(ws, meta, channel.Reader, cts.Token), ct);
@@ -173,7 +186,7 @@ public sealed class AcsMediaWebSocketHandler()
         }
         finally
         {
-            // Send stop if socket still open
+            // 结束 ACS 的连接（当没有客户端再连接时触发，若仍有一个客户端连着则不会触发）
             if (!ct.IsCancellationRequested && ws.State == WebSocketState.Open)
             {
                 string stop = OutStreamingData.GetStopAudioForOutbound();
@@ -181,7 +194,11 @@ public sealed class AcsMediaWebSocketHandler()
             }
 
             _ttsWriter = null;
+            _ttsWriterReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _logger.LogInformation("Outbound audio finished.");
+
+            AcsWebSocketHandlerRegistry.Unregister(_threadId, _targetLang);
+            await RtcSessionManagerRegistry.Unregister(_threadId, _targetLang)?.Dispose();
         }
     }
 
@@ -214,6 +231,25 @@ public sealed class AcsMediaWebSocketHandler()
         {
             _logger.LogError(ex, "PushTtsFrameAsync Error: {Message}", ex.Message);
             return false;
+        }
+    }
+
+    public async Task<bool> WaitForTtsWriterAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        if (_ttsWriter != null)
+            return true;
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            await _ttsWriterReady.Task.WaitAsync(timeoutCts.Token);
+            return _ttsWriter != null;
+        }
+        catch (OperationCanceledException)
+        {
+            return _ttsWriter != null;
         }
     }
 
