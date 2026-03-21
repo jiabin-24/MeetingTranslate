@@ -2,6 +2,7 @@
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Skype.Bots.Media;
 using NAudio.Wave;
+using StackExchange.Redis;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 
@@ -12,6 +13,57 @@ namespace EchoBot.Util
     /// </summary>
     internal static class Utilities
     {
+        private const string ReleaseLockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
+        public static Task<T> ExecuteWithDistributedLockAsync<T>(
+            IConnectionMultiplexer mux,
+            string lockKey,
+            TimeSpan expiry,
+            Func<string> lockFailedMessageFactory,
+            Func<Task<T>> action)
+        {
+            return ExecuteWithDistributedLockAsync(
+                mux,
+                lockKey,
+                expiry,
+                onLockNotAcquired: () => throw new InvalidOperationException(lockFailedMessageFactory()),
+                action: action);
+        }
+
+        public static async Task<T> ExecuteWithDistributedLockAsync<T>(
+            IConnectionMultiplexer mux,
+            string lockKey,
+            TimeSpan expiry,
+            Func<Task<T>> onLockNotAcquired,
+            Func<Task<T>> action)
+        {
+            var lockToken = Guid.NewGuid().ToString("N");
+            var database = mux.GetDatabase();
+
+            var lockAcquired = await database.StringSetAsync(
+                lockKey,
+                lockToken,
+                expiry,
+                when: When.NotExists).ConfigureAwait(false);
+
+            if (!lockAcquired)
+            {
+                return await onLockNotAcquired().ConfigureAwait(false);
+            }
+
+            try
+            {
+                return await action().ConfigureAwait(false);
+            }
+            finally
+            {
+                await database.ScriptEvaluateAsync(
+                    ReleaseLockScript,
+                    new RedisKey[] { lockKey },
+                    new RedisValue[] { lockToken }).ConfigureAwait(false);
+            }
+        }
+
         /// <summary>
         /// Helper function to create the audio buffers from file.
         /// Please make sure the audio file provided is PCM16Khz and the fileSizeInSec is the correct length.

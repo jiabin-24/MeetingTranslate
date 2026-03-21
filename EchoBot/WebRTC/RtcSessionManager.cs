@@ -6,6 +6,7 @@ using Azure.Communication.Rooms;
 using EchoBot.Constants;
 using EchoBot.Models;
 using EchoBot.Util;
+using StackExchange.Redis;
 
 namespace EchoBot.WebRTC
 {
@@ -14,6 +15,8 @@ namespace EchoBot.WebRTC
         private readonly CacheHelper _cache;
 
         private readonly CallAutomationClient _automationClient;
+
+        private readonly IConnectionMultiplexer _mux;
 
         private readonly ILogger _logger;
 
@@ -25,6 +28,12 @@ namespace EchoBot.WebRTC
 
         private readonly Uri _mediaWebSocketUri;
 
+        private static readonly TimeSpan AcsConnectLockExpiry = TimeSpan.FromSeconds(30);
+
+        private static readonly TimeSpan AcsConnectWaitInterval = TimeSpan.FromMilliseconds(300);
+
+        private const int AcsConnectWaitRetries = 20;
+
         private CallConnection? _callConn;
 
         public string ThreadId { get; set; }
@@ -35,6 +44,7 @@ namespace EchoBot.WebRTC
         {
             _cache = ServiceLocator.GetRequiredService<CacheHelper>();
             _automationClient = ServiceLocator.GetRequiredService<CallAutomationClient>();
+            _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
             _logger = ServiceLocator.GetRequiredService<ILogger<RtcSessionManager>>();
             _key = $"{threadId}:{targetLang}";
             
@@ -59,37 +69,61 @@ namespace EchoBot.WebRTC
                 return (null, _callConn);
             }
 
-            string cachedRoomId;
-            if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(_key))))
-                return ("Room has not been inited", null);
+            return await Utilities.ExecuteWithDistributedLockAsync<(string?, CallConnection)>(_mux, CacheConstants.AcsConnectLockKey(_key), AcsConnectLockExpiry,
+                onLockNotAcquired: async () =>
+                {
+                    for (var i = 0; i < AcsConnectWaitRetries; i++)
+                    {
+                        await Task.Delay(AcsConnectWaitInterval);
+                        cachedConnId = await _cache.GetAsync<string>(CacheConstants.AcsConnectKey(_key));
+                        if (string.IsNullOrEmpty(cachedConnId)) continue;
 
-            var callLocator = new RoomCallLocator(cachedRoomId);
-            // Media streaming configuration
-            var mediaStreamingOptions = new MediaStreamingOptions(MediaStreamingAudioChannel.Mixed, StreamingTransport.Websocket)
-            {
-                TransportUri = _mediaWebSocketUri,
-                StartMediaStreaming = true,
-                EnableBidirectional = true,
-                EnableDtmfTones = true,
-                AudioFormat = AudioFormat.Pcm16KMono,
-            };
+                        _callConn = _automationClient.GetCallConnection(cachedConnId);
+                        return (null, _callConn);
+                    }
 
-            var connectCallOptions = new ConnectCallOptions(callLocator, _callback)
-            {
-                MediaStreamingOptions = mediaStreamingOptions
-            };
+                    return ("Another instance is creating ACS connection, retry later", null);
+                },
+                action: async () =>
+                {
+                    if (!string.IsNullOrEmpty(cachedConnId = await _cache.GetAsync<string>(CacheConstants.AcsConnectKey(_key))))
+                    {
+                        _callConn = _automationClient.GetCallConnection(cachedConnId);
+                        return (null, _callConn);
+                    }
 
-            _logger.LogInformation("ConnectCallAsync start. roomId={roomId}, callback={callback}, mediaUri={mediaUri}", cachedRoomId, _callback, _mediaWebSocketUri);
+                    string cachedRoomId;
+                    if (string.IsNullOrEmpty(cachedRoomId = await _cache.GetAsync<string>(CacheConstants.AcsRoomKey(_key))))
+                        return ("Room has not been inited", null);
 
-            ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
-            cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
+                    var callLocator = new RoomCallLocator(cachedRoomId);
+                    // Media streaming configuration
+                    var mediaStreamingOptions = new MediaStreamingOptions(MediaStreamingAudioChannel.Mixed, StreamingTransport.Websocket)
+                    {
+                        TransportUri = _mediaWebSocketUri,
+                        StartMediaStreaming = true,
+                        EnableBidirectional = true,
+                        EnableDtmfTones = true,
+                        AudioFormat = AudioFormat.Pcm16KMono,
+                    };
 
-            _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", cachedConnId);
-            _callConn = _automationClient.GetCallConnection(cachedConnId);
+                    var connectCallOptions = new ConnectCallOptions(callLocator, _callback)
+                    {
+                        MediaStreamingOptions = mediaStreamingOptions
+                    };
 
-            await _cache.SetAsync(CacheConstants.AcsConnectKey(_key), TimeSpan.FromHours(2), cachedConnId);
+                    _logger.LogInformation("ConnectCallAsync start. roomId={roomId}, callback={callback}, mediaUri={mediaUri}", cachedRoomId, _callback, _mediaWebSocketUri);
 
-            return (null, _callConn);
+                    ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
+                    cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
+
+                    _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", cachedConnId);
+                    _callConn = _automationClient.GetCallConnection(cachedConnId);
+
+                    await _cache.SetAsync(CacheConstants.AcsConnectKey(_key), TimeSpan.FromHours(2), cachedConnId);
+
+                    return (null, _callConn);
+                });
         }
 
         public static async Task<bool> EnsureGroupCallConnectionAsync(RtcSessionManager rtcSession)
