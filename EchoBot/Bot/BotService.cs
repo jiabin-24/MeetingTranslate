@@ -39,6 +39,9 @@ namespace EchoBot.Bot
         IBotMediaLogger mediaLogger,
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
+        private const int JoinLockExpirySeconds = 90;
+        private const string ReleaseLockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
         /// <summary>
         /// The Graph logger
         /// </summary>
@@ -197,16 +200,58 @@ namespace EchoBot.Bot
                 };
             }
 
-            if (!this.CallHandlers.TryGetValue(joinParams.ChatInfo.ThreadId!, out CallHandler? call))
-            {
-                var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
+            var threadId = joinParams.ChatInfo.ThreadId!;
+            var joinLockKey = CacheConstants.BotJoinLockKey(threadId);
+            return await ExecuteWithDistributedLockAsync(
+                joinLockKey,
+                TimeSpan.FromSeconds(JoinLockExpirySeconds),
+                () => $"Join call is already in progress for thread '{threadId}'.",
+                async () =>
+                {
+                    if (!this.CallHandlers.TryGetValue(threadId, out CallHandler? call))
+                    {
+                        var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
 
-                _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
-                await _mux.GetDatabase().KeyDeleteAsync($"list:{joinParams.ChatInfo.ThreadId}");
-                return statefulCall;
+                        _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
+                        await _mux.GetDatabase().KeyDeleteAsync($"list:{threadId}");
+                        return statefulCall;
+                    }
+
+                    throw new Exception("Call has already been added");
+                }).ConfigureAwait(false);
+        }
+
+        private async Task<T> ExecuteWithDistributedLockAsync<T>(
+            string lockKey,
+            TimeSpan expiry,
+            Func<string> lockFailedMessageFactory,
+            Func<Task<T>> action)
+        {
+            var joinLockToken = Guid.NewGuid().ToString("N");
+            var database = _mux.GetDatabase();
+
+            var lockAcquired = await database.StringSetAsync(
+                lockKey,
+                joinLockToken,
+                expiry,
+                when: When.NotExists).ConfigureAwait(false);
+
+            if (!lockAcquired)
+            {
+                throw new InvalidOperationException(lockFailedMessageFactory());
             }
 
-            throw new Exception("Call has already been added");
+            try
+            {
+                return await action().ConfigureAwait(false);
+            }
+            finally
+            {
+                await database.ScriptEvaluateAsync(
+                    ReleaseLockScript,
+                    new RedisKey[] { lockKey },
+                    new RedisValue[] { joinLockToken }).ConfigureAwait(false);
+            }
         }
 
         /// <summary>

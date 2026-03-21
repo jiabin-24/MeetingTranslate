@@ -4,6 +4,8 @@
     {
         public static string BotMeetingsKey(string threadId) => $"bot_meeting_{threadId}";
 
+        public static string BotJoinLockKey(string threadId) => $"bot_join_lock_{threadId}";
+
         public static string AcsConnectKey(string groupId) => $"CallConnectionId_{groupId}";
 
         public static string AcsRoomKey(string groupId) => $"RoomId_{groupId}";
