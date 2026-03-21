@@ -26,7 +26,7 @@ namespace EchoBot.Media
         protected readonly TranslatorOptions TranslatorOptions;
 
         // Energy threshold (RMS) above which we consider this buffer as active speech for assigning speaker id
-        protected const double SpeakerEnergyThreshold = 800.0;
+        protected const double SpeakerEnergyThreshold = 750.0;
 
         private int _placeHolderIndex;
 

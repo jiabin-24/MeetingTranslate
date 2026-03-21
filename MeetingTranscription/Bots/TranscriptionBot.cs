@@ -203,8 +203,6 @@ namespace MeetingTranscription.Bots
                 {
                     JoinUrl = meeting.JoinUrl.ToString()
                 });
-
-                await _cache.SetAsync(CacheConstants.BotMeetingsKey(botMeeting!.Resource!.ChatInfo!.ThreadId), TimeSpan.FromHours(3), "0");
             }
             catch (Exception ex)
             {
@@ -230,11 +228,7 @@ namespace MeetingTranscription.Bots
                 _logger.LogInformation($"Meeting Ended: {meetingInfo.Details.MsGraphResourceId}");
 
                 // End the bot's call in the meeting
-                if (!string.IsNullOrEmpty(await _cache.GetAsync<string>(CacheConstants.BotMeetingsKey(threadId))))
-                {
-                    await _botService.EndCallByThreadIdAsync(threadId);
-                    await _cache.DeleteAsync(CacheConstants.BotMeetingsKey(threadId));
-                }
+                await _botService.EndCallByThreadIdAsync(threadId);
             }
             catch (Exception ex)
             {

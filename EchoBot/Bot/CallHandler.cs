@@ -176,10 +176,7 @@ namespace EchoBot.Bot
 
             if (this.BotMediaStream.Participants.Count == 0)
             {
-                if (string.IsNullOrEmpty(await _cacheHelper.GetAsync<string>(CacheConstants.BotMeetingsKey(_threadId))))
-                    return;
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
-                await _cacheHelper.DeleteAsync(CacheConstants.BotMeetingsKey(_threadId));
             }
         }
 
