@@ -5,6 +5,7 @@ using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
+using System.Linq;
 using System.Timers;
 
 namespace EchoBot.Bot
@@ -29,6 +30,8 @@ namespace EchoBot.Bot
         public BotMediaStream BotMediaStream { get; private set; }
 
         private readonly CacheHelper _cacheHelper;
+        private readonly CollectionEventHandler<IParticipantCollection, IParticipant> _participantsUpdatedHandler;
+        private readonly ResourceEventHandler<IParticipant, Participant> _participantUpdatedHandler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CallHandler" /> class.
@@ -38,9 +41,12 @@ namespace EchoBot.Bot
         public CallHandler(ICall statefulCall)
             : base(TimeSpan.FromMinutes(10), statefulCall?.GraphLogger!)
         {
+            this._participantsUpdatedHandler = async (s, e) => await this.ParticipantsOnUpdated(s, e);
+            this._participantUpdatedHandler = async (s, e) => await this.OnParticipantUpdated(s, e);
+
             this.Call = statefulCall;
             this.Call.OnUpdated += this.CallOnUpdated;
-            this.Call.Participants.OnUpdated += async (s, e) => await this.ParticipantsOnUpdated(s, e);
+            this.Call.Participants.OnUpdated += this._participantsUpdatedHandler;
 
             this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
@@ -58,11 +64,11 @@ namespace EchoBot.Bot
         {
             base.Dispose(disposing);
             this.Call.OnUpdated -= this.CallOnUpdated;
-            this.Call.Participants.OnUpdated -= async (s, e) => await this.ParticipantsOnUpdated(s, e);
+            this.Call.Participants.OnUpdated -= this._participantsUpdatedHandler;
 
             foreach (var participant in this.Call.Participants)
             {
-                participant.OnUpdated -= async (s, e) => await this.OnParticipantUpdated(s, e);
+                participant.OnUpdated -= this._participantUpdatedHandler;
             }
 
             this.BotMediaStream?.ShutdownAsync().ForgetAndLogExceptionAsync(this.GraphLogger);
@@ -117,8 +123,19 @@ namespace EchoBot.Bot
         {
             if (added)
             {
-                participants.Add(participant);
-                participant.OnUpdated += async (s, e) => await this.OnParticipantUpdated(s, e);
+                if (!participants.Any(p => p.Id == participant.Id))
+                {
+                    participants.Add(participant);
+                    participant.OnUpdated += this._participantUpdatedHandler;
+                }
+                else
+                {
+                    var index = participants.FindIndex(p => p.Id == participant.Id);
+                    if (index >= 0)
+                    {
+                        participants[index] = participant;
+                    }
+                }
 
                 if (!string.IsNullOrEmpty(participantDisplayName))
                     this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
@@ -126,8 +143,14 @@ namespace EchoBot.Bot
             }
             else
             {
-                participants.Remove(participant);
-                participant.OnUpdated -= async (s, e) => await this.OnParticipantUpdated(s, e);
+                var existingParticipant = participants.FirstOrDefault(p => p.Id == participant.Id);
+                if (existingParticipant != null)
+                {
+                    existingParticipant.OnUpdated -= this._participantUpdatedHandler;
+                    participants.Remove(existingParticipant);
+                }
+
+                participant.OnUpdated -= this._participantUpdatedHandler;
                 await UnsubscribeFromParticipantAudio(participant);
             }
             return CreateParticipantUpdateJson(participant.Id, participantDisplayName);
@@ -182,16 +205,33 @@ namespace EchoBot.Bot
 
         private async Task OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
-            await Task.CompletedTask;
+            var index = this.BotMediaStream.Participants.FindIndex(p => p.Id == sender.Id);
+            if (index >= 0)
+            {
+                this.BotMediaStream.Participants[index] = sender;
+            }
+
+            await SubscribeToParticipantAudio(sender, forceSubscribe: false);
         }
 
         private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
+            var audioSourceId = participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
+            if (!string.IsNullOrEmpty(audioSourceId))
+            {
+                GraphLogger.Info($"Participant {participant.Id} audio source ready: {audioSourceId}");
+            }
+            else if (forceSubscribe)
+            {
+                GraphLogger.Warn($"Participant {participant.Id} has no audio source yet.");
+            }
+
             await Task.CompletedTask;
         }
 
         private async Task UnsubscribeFromParticipantAudio(IParticipant participant)
         {
+            GraphLogger.Info($"Participant {participant.Id} audio unsubscribed.");
             await Task.CompletedTask;
         }
 
