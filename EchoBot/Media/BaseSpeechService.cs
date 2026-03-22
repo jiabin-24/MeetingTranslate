@@ -188,7 +188,7 @@ namespace EchoBot.Media
             if (!sourceLang.Equals(lang) && !sourceLang.Equals(AUTO))
                 return;
 
-            var rtcSessionManager = RtcSessionManagerRegistry.TryGet(ThreadId, lang, out var manager) ? manager : null;
+            var rtcSessionManager = RtcSessionManagerRegistry.TryRegister(ThreadId, lang, () => new RtcSessionManager(ThreadId, lang));
             if (!await RtcSessionManager.EnsureGroupCallConnectionAsync(rtcSessionManager))
                 return;
 

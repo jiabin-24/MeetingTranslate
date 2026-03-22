@@ -28,13 +28,7 @@ namespace EchoBot.Controllers
         [HttpPost("addParticipant")]
         public async Task<Room> AddParticipant([FromBody] AddRoomParticipant addRoomPart)
         {
-            var rtcSessionManager = RtcSessionManagerRegistry.TryGet(addRoomPart.GroupId, addRoomPart.Lang, out var manager) ? manager : null;
-            if (rtcSessionManager == null)
-            {
-                rtcSessionManager = new RtcSessionManager(addRoomPart.GroupId, addRoomPart.Lang);
-                RtcSessionManagerRegistry.Register(addRoomPart.GroupId, addRoomPart.Lang, rtcSessionManager);
-            }
-
+            var rtcSessionManager = RtcSessionManagerRegistry.TryRegister(addRoomPart.GroupId, addRoomPart.Lang, () => new RtcSessionManager(addRoomPart.GroupId, addRoomPart.Lang));
             var roomParticipant = await rtcSessionManager.AddRoomParticipant(addRoomPart);
             return roomParticipant;
         }

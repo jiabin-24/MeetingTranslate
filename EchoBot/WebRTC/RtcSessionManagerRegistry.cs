@@ -40,6 +40,13 @@ namespace EchoBot.WebRTC
             return _registry.TryGetValue(GetKey(threadId, targetLang), out manager);
         }
 
+        public static RtcSessionManager TryRegister(string threadId, string targetLang, Func<RtcSessionManager> managerFactory)
+        {
+            if (threadId == null || managerFactory == null) return null;
+            var key = GetKey(threadId, targetLang);
+            return _registry.GetOrAdd(key, _ => managerFactory());
+        }
+
         private static string GetKey(string threadId, string targetLang) => $"{threadId}_{targetLang}";
     }
 }
