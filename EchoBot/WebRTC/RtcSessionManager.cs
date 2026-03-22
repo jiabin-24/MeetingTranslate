@@ -115,6 +115,7 @@ namespace EchoBot.WebRTC
                     _logger.LogInformation("ConnectCallAsync start. roomId={roomId}, callback={callback}, mediaUri={mediaUri}", cachedRoomId, _callback, _mediaWebSocketUri);
 
                     ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
+                    await Task.Delay(1000);
                     cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
 
                     _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", cachedConnId);
