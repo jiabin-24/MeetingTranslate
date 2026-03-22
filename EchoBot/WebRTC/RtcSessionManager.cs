@@ -1,5 +1,4 @@
-﻿using Azure.AI.Agents.Persistent;
-using Azure.Communication;
+﻿using Azure.Communication;
 using Azure.Communication.CallAutomation;
 using Azure.Communication.Identity;
 using Azure.Communication.Rooms;
@@ -113,9 +112,16 @@ namespace EchoBot.WebRTC
                     };
 
                     _logger.LogInformation("ConnectCallAsync start. roomId={roomId}, callback={callback}, mediaUri={mediaUri}", cachedRoomId, _callback, _mediaWebSocketUri);
-
                     ConnectCallResult callResult = await _automationClient.ConnectCallAsync(connectCallOptions);
-                    await Task.Delay(1000);
+
+                    var mediaHandler = await AcsWebSocketHandlerRegistry.WaitForHandlerAsync(ThreadId, TargetLang, TimeSpan.FromSeconds(15));
+                    if (mediaHandler == null)
+                    {
+                        _logger.LogWarning("Media websocket was not connected in time. threadId={threadId}, targetLang={targetLang}, mediaUri={mediaUri}",
+                            ThreadId, TargetLang, _mediaWebSocketUri);
+                        return ("Media websocket is not ready, retry later", null);
+                    }
+
                     cachedConnId = callResult.CallConnectionProperties.CallConnectionId;
 
                     _logger.LogInformation("CALL Azure Communication Service CONNECTION ID : {callConnectionId}", cachedConnId);
