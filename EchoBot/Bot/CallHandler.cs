@@ -216,9 +216,9 @@ namespace EchoBot.Bot
 
         private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
-            var speakerId = participant.Resource.Info.Identity?.User?.Id;
+            var identity = TryGetParticipantIdentity(participant);
             var audioSourceId = participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
-            var displayName = participant.Resource.Info.Identity?.User?.DisplayName;
+            var displayName = identity?.DisplayName;
 
             if (!string.IsNullOrEmpty(audioSourceId))
             {
@@ -232,6 +232,21 @@ namespace EchoBot.Bot
             }
 
             await Task.CompletedTask;
+        }
+
+        public static Identity TryGetParticipantIdentity(IParticipant participant)
+        {
+            var identitySet = participant?.Resource?.Info?.Identity;
+            var identity = identitySet?.User;
+
+            if (identity == null &&
+                identitySet != null &&
+                identitySet.AdditionalData.Any(kvp => kvp.Value is Identity))
+            {
+                identity = identitySet.AdditionalData.Values.First(v => v is Identity) as Identity;
+            }
+
+            return identity;
         }
 
         private async Task UnsubscribeFromParticipantAudio(IParticipant participant)

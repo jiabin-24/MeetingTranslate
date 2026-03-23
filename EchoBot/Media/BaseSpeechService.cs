@@ -1,4 +1,5 @@
-﻿using EchoBot.Constants;
+﻿using EchoBot.Bot;
+using EchoBot.Constants;
 using EchoBot.Translator;
 using EchoBot.Util;
 using EchoBot.WebRTC;
@@ -41,7 +42,7 @@ namespace EchoBot.Media
 
         internal List<IParticipant> Participants;
 
-        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(SpeakerId, p => IdentityToParticipant(SpeakerId(p), p.Resource.Info.Identity.User));
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(SpeakerId, p => IdentityToParticipant(SpeakerId(p), CallHandler.TryGetParticipantIdentity(p)));
 
         // Logger created for the runtime type so derived classes get a category with their actual type
         protected ILogger Logger;
@@ -274,7 +275,7 @@ namespace EchoBot.Media
             return dict;
         }
 
-        private static string SpeakerId(IParticipant participant) => participant.Resource.Info.Identity?.User?.Id;
+        private static string SpeakerId(IParticipant participant) => CallHandler.TryGetParticipantIdentity(participant)?.Id;
 
         private static Models.Participant IdentityToParticipant(string speakerId, Identity? identity)
         {
