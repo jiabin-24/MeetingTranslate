@@ -53,6 +53,8 @@ namespace EchoBot.Media
 
         private readonly IConnectionMultiplexer _mux;
 
+        private readonly CacheHelper _cacheHelper;
+
         public BaseSpeechService(string threadId, List<IParticipant> participants)
         {
             ThreadId = threadId;
@@ -63,6 +65,7 @@ namespace EchoBot.Media
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
+            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
         }
 
         public virtual async Task ShutDownAsync()
@@ -157,8 +160,17 @@ namespace EchoBot.Media
 
         private async Task<Models.Participant> GetParticipant(string audioId)
         {
-            AudioToIdentityMap.TryGetValue(audioId, out var speaker);
-            speaker ??= new Models.Participant { Id = audioId, DisplayName = $"Speaker-{audioId}" };
+            if (!AudioToIdentityMap.TryGetValue(audioId, out var speaker))
+            {
+                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, audioId), TimeSpan.FromSeconds(10));
+                var displayName = string.IsNullOrEmpty(speakerName) ? $"Speaker-{audioId}" : speakerName;
+
+                speaker = new Models.Participant
+                {
+                    Id = audioId,
+                    DisplayName = displayName
+                };
+            }
 
             return speaker;
         }

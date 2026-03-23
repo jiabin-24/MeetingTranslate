@@ -220,6 +220,7 @@ namespace EchoBot.Bot
             if (!string.IsNullOrEmpty(audioSourceId))
             {
                 GraphLogger.Info($"Participant {participant.Id} audio source ready: {audioSourceId}");
+                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), participant.Resource.Info.Identity?.User?.DisplayName);
             }
             else if (forceSubscribe)
             {

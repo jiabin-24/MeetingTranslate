@@ -210,5 +210,6 @@ static class Program
         });
 
         builder.Services.AddSingleton<CacheHelper>();
+        builder.Services.AddMemoryCache();
     }
 }

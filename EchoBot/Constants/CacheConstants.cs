@@ -12,6 +12,6 @@
 
         public static string AcsRoomParticipantKey(string groupId) => $"RoomParticipantId_{groupId}";
 
-        public static string MsAudioParticipantsKey(string threadId, string sourceId) => $"{threadId}-{sourceId}";
+        public static string MsAudioParticipantsKey(string threadId, string sourceId) => $"AudioParticipants_{threadId}-{sourceId}";
     }
 }
