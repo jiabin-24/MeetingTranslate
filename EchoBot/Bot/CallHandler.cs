@@ -5,7 +5,6 @@ using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
-using System.Linq;
 using System.Timers;
 
 namespace EchoBot.Bot
@@ -216,11 +215,15 @@ namespace EchoBot.Bot
 
         private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
+            var speakerId = participant.Resource.Info.Identity?.User?.Id;
             var audioSourceId = participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
+            var displayName = participant.Resource.Info.Identity?.User?.DisplayName;
+
             if (!string.IsNullOrEmpty(audioSourceId))
             {
                 GraphLogger.Info($"Participant {participant.Id} audio source ready: {audioSourceId}");
-                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), participant.Resource.Info.Identity?.User?.DisplayName);
+
+                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), displayName);
             }
             else if (forceSubscribe)
             {

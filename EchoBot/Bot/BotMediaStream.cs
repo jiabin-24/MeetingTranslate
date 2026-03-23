@@ -4,9 +4,11 @@ using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
+using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
 using System.Runtime.InteropServices;
+using System.Linq;
 
 namespace EchoBot.Bot
 {
@@ -197,8 +199,8 @@ namespace EchoBot.Bot
             if (e.Buffer == null)
                 return;
 
-            var speakerId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
-            await LanguageService.AppendAudioBuffer(e.Buffer, speakerId);
+            var speakerAudioId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
+            await LanguageService.AppendAudioBuffer(e.Buffer, ResolveSpeakerId(speakerAudioId));
         }
 
         private async Task MulAudioModeAudioMediaReceived(object? sender, AudioMediaReceivedEventArgs e)
@@ -212,8 +214,23 @@ namespace EchoBot.Bot
                 var data = new byte[length];
                 Marshal.Copy(buffer.Data, data, 0, (int)length);
 
-                await LanguageService.AppendAudioBuffer(Util.Utilities.CreateAudioMediaBuffer(data, DateTime.Now.Ticks, _logger), buffer.ActiveSpeakerId.ToString());
+                await LanguageService.AppendAudioBuffer(Util.Utilities.CreateAudioMediaBuffer(data, DateTime.Now.Ticks, _logger), ResolveSpeakerId(buffer.ActiveSpeakerId.ToString()));
             }
+        }
+
+        private string ResolveSpeakerId(string? audioSourceId)
+        {
+            if (string.IsNullOrWhiteSpace(audioSourceId))
+                return "unknown";
+
+            var participant = Participants.FirstOrDefault(p =>
+                string.Equals(
+                    p.Resource?.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId,
+                    audioSourceId,
+                    StringComparison.Ordinal));
+
+            var userId = participant?.Resource?.Info?.Identity?.User?.Id;
+            return string.IsNullOrWhiteSpace(userId) ? audioSourceId : userId;
         }
 
         private void OnSendMediaBuffer(object? sender, Media.MediaStreamEventArgs e)
