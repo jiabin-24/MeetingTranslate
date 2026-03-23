@@ -98,8 +98,6 @@ namespace EchoBot.Media
                     bufferLength = converted.Length;
                     Volatile.Write(ref session.LastAudioTicks, DateTime.UtcNow.Ticks);
 
-                    SetCurrentSpeaker(speakerId, buffer, bufferLength);
-
                     // Accumulate incoming frames into a chunk buffer and only send when we have exactly one full ChunkSize (80ms)
                     var chunkToSend = GetBatchBuffer(session, buffer, (int)bufferLength);
                     if (chunkToSend != null && session.WsClients.Values.All(c => c.State == WebSocketState.Open) && !session.SessionEnded.Task.IsCompleted)
