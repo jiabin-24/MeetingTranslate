@@ -6,6 +6,7 @@ using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
+using System.Runtime.InteropServices;
 
 namespace EchoBot.Bot
 {
@@ -171,17 +172,10 @@ namespace EchoBot.Bot
         /// <param name="e">The audio media received arguments.</param>
         private async void OnAudioMediaReceived(object? sender, AudioMediaReceivedEventArgs e)
         {
-            _logger.LogTrace($"Received Audio: [AudioMediaReceivedEventArgs(Data=<{e.Buffer.Data.ToString()}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp})]");
-
             try
             {
-                if (!startVideoPlayerCompleted.Task.IsCompleted) { return; }
-
-                if (e.Buffer == null)
-                    return;
-
-                var speakerId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
-                await LanguageService.AppendAudioBuffer(e.Buffer, speakerId);
+                //await SingleAudioModeAudioMediaReceived(sender, e);
+                await MulAudioModeAudioMediaReceived(sender, e);
             }
             catch (Exception ex)
             {
@@ -191,6 +185,34 @@ namespace EchoBot.Bot
             finally
             {
                 e.Buffer.Dispose();
+            }
+        }
+
+        private async Task SingleAudioModeAudioMediaReceived(object? sender, AudioMediaReceivedEventArgs e)
+        {
+            _logger.LogTrace($"Received Audio: [AudioMediaReceivedEventArgs(Data=<{e.Buffer.Data.ToString()}>, Length={e.Buffer.Length}, Timestamp={e.Buffer.Timestamp})]");
+
+            if (!startVideoPlayerCompleted.Task.IsCompleted) { return; }
+
+            if (e.Buffer == null)
+                return;
+
+            var speakerId = e.Buffer.ActiveSpeakers.Length != 0 ? e.Buffer.ActiveSpeakers[0].ToString() : null;
+            await LanguageService.AppendAudioBuffer(e.Buffer, speakerId);
+        }
+
+        private async Task MulAudioModeAudioMediaReceived(object? sender, AudioMediaReceivedEventArgs e)
+        {
+            if (e.Buffer.UnmixedAudioBuffers == null)
+                return;
+
+            foreach (var buffer in e.Buffer.UnmixedAudioBuffers)
+            {
+                var length = buffer.Length;
+                var data = new byte[length];
+                Marshal.Copy(buffer.Data, data, 0, (int)length);
+
+                await LanguageService.AppendAudioBuffer(Util.Utilities.CreateAudioMediaBuffer(data, DateTime.Now.Ticks, _logger), buffer.ActiveSpeakerId.ToString());
             }
         }
 

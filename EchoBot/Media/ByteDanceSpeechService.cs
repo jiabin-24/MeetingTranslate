@@ -21,36 +21,40 @@ namespace EchoBot.Media
     {
         private readonly ByteDanceSettings _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
 
-        private readonly ConcurrentDictionary<string, ClientWebSocket> _wsClients = [];
-
-        private readonly ConcurrentDictionary<string, string> _sessionIds = [];
-
-        private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _handshakeDones = [];
-
-        private readonly TaskCompletionSource<bool> _sessionEnded = new();
-
-        private readonly byte[] _sendBuffer = new byte[ChunkSize];
-        private readonly object _sendLock = new();
-        private int _sendLen = 0;
-
-        private readonly MemoryStream _recvAudio = new();
-        private int _singleRecvTime = 0;
-        private int _backlogRecvTime = 0;
-        private bool _finishFlag = false;
-        private int _convertLeftoverCount = 0;
-        private readonly byte[] _convertLeftoverBuffer = new byte[8];
+        private readonly ConcurrentDictionary<string, SpeakerSession> _speakerSessions = [];
 
         // Send audio in 80ms chunks. At 16kHz, 16-bit mono => 32000 bytes/sec => 0.08 * 32000 = 2560 bytes
         private const int ChunkSize = 2560;
 
         private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan SilenceSendInterval = TimeSpan.FromMilliseconds(80);
+        private static readonly TimeSpan SilenceStartAfterNoAudio = TimeSpan.FromMilliseconds(120);
 
         private const string UID = "ast_csharp_client";
 
         protected override string AUTO => "zhen";
 
-        // 0 = not starting, 1 = starting/in-progress
-        private int _starting = 0;
+        private sealed class SpeakerSession
+        {
+            public string SpeakerId { get; init; } = string.Empty;
+            public ConcurrentDictionary<string, ClientWebSocket> WsClients { get; } = [];
+            public ConcurrentDictionary<string, string> SessionIds { get; } = [];
+            public ConcurrentDictionary<string, TaskCompletionSource<bool>> HandshakeDones { get; } = [];
+            public TaskCompletionSource<bool> SessionEnded { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public byte[] SendBuffer { get; } = new byte[ChunkSize];
+            public object SendLock { get; } = new();
+            public int SendLen;
+            public MemoryStream RecvAudio { get; } = new();
+            public ulong TranslatingTime;
+            public bool FinishFlag;
+            public int ConvertLeftoverCount;
+            public byte[] ConvertLeftoverBuffer { get; } = new byte[8];
+            public int Starting;
+            public int Running;
+            public long LastAudioTicks;
+            public CancellationTokenSource KeepAliveCts { get; } = new();
+            public Task? KeepAliveTask;
+        }
 
         private readonly Dictionary<string, string> _translateTarget = new()
         {
@@ -61,16 +65,21 @@ namespace EchoBot.Media
 
         public override async Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId)
         {
-            var sourceLangs = _translateTarget.Keys;
+            if (string.IsNullOrWhiteSpace(speakerId))
+                speakerId = "unknown";
 
-            // If not running, ensure only the first caller triggers Start().
-            if (!IsRunning)
+            var sourceLangs = _translateTarget.Keys;
+            var session = _speakerSessions.GetOrAdd(speakerId, id => new SpeakerSession { SpeakerId = id });
+
+            // Per-speaker lazy start: ensure only first caller creates recognizers for this speaker.
+            if (Volatile.Read(ref session.Running) == 0)
             {
-                // If another caller already set _starting to 1, drop this call.
-                if (Interlocked.CompareExchange(ref _starting, 1, 0) != 0)
+                if (Interlocked.CompareExchange(ref session.Starting, 1, 0) != 0)
                     return;
 
-                await Task.WhenAll(sourceLangs.Select(Start)).ConfigureAwait(false);
+                await Task.WhenAll(sourceLangs.Select(lang => Start(session, lang, speakerId))).ConfigureAwait(false);
+                Volatile.Write(ref session.Running, 1);
+                StartKeepAliveLoop(session);
                 IsRunning = true;
             }
 
@@ -81,31 +90,21 @@ namespace EchoBot.Media
                 {
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
-                    var converted = Utilities.ConvertToPcm16Mono16k(buffer, (int)bufferLength, new WaveFormat(16000, 16, 1), ref _convertLeftoverCount, _convertLeftoverBuffer);
+                    var converted = Utilities.ConvertToPcm16Mono16k(buffer, (int)bufferLength, new WaveFormat(16000, 16, 1), ref session.ConvertLeftoverCount, session.ConvertLeftoverBuffer);
                     if (converted.Length == 0)
                         return;
 
                     buffer = converted;
                     bufferLength = converted.Length;
+                    Volatile.Write(ref session.LastAudioTicks, DateTime.UtcNow.Ticks);
 
                     SetCurrentSpeaker(speakerId, buffer, bufferLength);
 
                     // Accumulate incoming frames into a chunk buffer and only send when we have exactly one full ChunkSize (80ms)
-                    var chunkToSend = GetBatchBuffer(buffer, (int)bufferLength);
-                    if (chunkToSend != null && _wsClients.Values.All(c => c.State == WebSocketState.Open) && !_sessionEnded.Task.IsCompleted)
+                    var chunkToSend = GetBatchBuffer(session, buffer, (int)bufferLength);
+                    if (chunkToSend != null && session.WsClients.Values.All(c => c.State == WebSocketState.Open) && !session.SessionEnded.Task.IsCompleted)
                     {
-                        var tasks = sourceLangs.Select(l =>
-                        {
-                            var chunkReq = new TranslateRequest
-                            {
-                                RequestMeta = new RequestMeta { SessionID = _sessionIds[l] },
-                                Event = EV.Type.TaskRequest,
-                                SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(chunkToSend) }
-                            };
-
-                            return _wsClients[l].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
-                        });
-                        await Task.WhenAll(tasks).ConfigureAwait(false);
+                        await SendChunkAsync(session, chunkToSend).ConfigureAwait(false);
                         await Task.Delay(10);
                     }
                 }
@@ -113,24 +112,23 @@ namespace EchoBot.Media
             catch (Exception e)
             {
                 Logger.LogError(e, "Send error");
-                _sessionEnded.TrySetResult(true);
+                session.SessionEnded.TrySetResult(true);
             }
-
-            await _sessionEnded.Task.ConfigureAwait(false);
         }
 
-        private async Task Start(string sourceLang)
+        private async Task Start(SpeakerSession session, string sourceLang, string speakerId)
         {
-            _wsClients[sourceLang] = await CreateWsClient();
-            _sessionIds[sourceLang] = Guid.NewGuid().ToString();
-            _handshakeDones[sourceLang] = new TaskCompletionSource<bool>();
+            Volatile.Write(ref session.LastAudioTicks, DateTime.UtcNow.Ticks);
+            session.WsClients[sourceLang] = await CreateWsClient();
+            session.SessionIds[sourceLang] = Guid.NewGuid().ToString();
+            session.HandshakeDones[sourceLang] = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // Start receive loop
-            _ = ReceiveMessage(_sessionIds[sourceLang], sourceLang);
+            _ = ReceiveMessage(session, session.SessionIds[sourceLang], sourceLang, speakerId);
             // Send StartSession to trigger handshake
-            await StartSession(_sessionIds[sourceLang], sourceLang);
+            await StartSession(session, session.SessionIds[sourceLang], sourceLang);
             // Wait handshake
-            await _handshakeDones[sourceLang].Task.ConfigureAwait(false);
+            await session.HandshakeDones[sourceLang].Task.ConfigureAwait(false);
         }
 
         private async Task<ClientWebSocket> CreateWsClient()
@@ -149,7 +147,7 @@ namespace EchoBot.Media
             return wsClient;
         }
 
-        private async Task StartSession(string sessionId, string sourceLang)
+        private async Task StartSession(SpeakerSession session, string sessionId, string sourceLang)
         {
             // Send StartSession
             var startReq = new TranslateRequest
@@ -163,15 +161,16 @@ namespace EchoBot.Media
                 TargetAudio = new Audio { Format = "pcm", Rate = 16000 },
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = sourceLang.Equals(AUTO) ? AUTO : _translateTarget[sourceLang] }
             };
-            await _wsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
+            await session.WsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
             Logger.LogInformation("StartSession sent");
         }
 
-        public async Task FinishSession(string sessionId, string sourceLang)
+        private async Task FinishSession(SpeakerSession session, string sourceLang)
         {
-            var wsClient = _wsClients[sourceLang];
+            if (!session.WsClients.TryGetValue(sourceLang, out var wsClient) || !session.SessionIds.TryGetValue(sourceLang, out var sessionId))
+                return;
 
-            if (!_sessionEnded.Task.IsCompleted && wsClient.State == WebSocketState.Open)
+            if (!session.SessionEnded.Task.IsCompleted && wsClient.State == WebSocketState.Open)
             {
                 var finishReq = new TranslateRequest
                 {
@@ -180,20 +179,20 @@ namespace EchoBot.Media
                 };
                 await wsClient.SendAsync(new ArraySegment<byte>(finishReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
 
-                _sessionEnded.TrySetResult(true);
-                Logger.LogInformation("FinishSession sent");
+                session.SessionEnded.TrySetResult(true);
+                Logger.LogInformation("FinishSession sent for speaker {speakerId}", session.SpeakerId);
             }
 
             if (wsClient.State == WebSocketState.Open)
                 await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Session completed", new CancellationTokenSource(DefaultTimeout).Token);
         }
 
-        private async Task ReceiveMessage(string sessionId, string sourceLang)
+        private async Task ReceiveMessage(SpeakerSession session, string sessionId, string sourceLang, string speakerId)
         {
             var buffer = new byte[64 * 1024];
             var sourceSb = new StringBuilder();
             var tranlatedSb = new StringBuilder();
-            var wsClient = _wsClients[sourceLang];
+            var wsClient = session.WsClients[sourceLang];
             var receiveTimeout = TimeSpan.FromSeconds(10);
 
             try
@@ -215,13 +214,13 @@ namespace EchoBot.Media
                             Logger.LogWarning("Receive timeout {ReceiveTimeout}s for session {sessionId}, sourceLang {sourceLang}. Reconnecting...",
                                 receiveTimeout.TotalSeconds, sessionId, sourceLang);
 
-                            await Reconnect(wsClient, sourceLang);
+                            await Reconnect(session, wsClient, sourceLang, speakerId);
                             return;
                         }
                         if (result.MessageType == WebSocketMessageType.Close && wsClient.State == WebSocketState.Open)
                         {
                             await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", new CancellationTokenSource(DefaultTimeout).Token);
-                            _sessionEnded.TrySetResult(true);
+                            session.SessionEnded.TrySetResult(true);
                             return;
                         }
                         ms.Write(buffer, 0, result.Count);
@@ -235,28 +234,26 @@ namespace EchoBot.Media
 
                         if (eventType == EV.Type.SessionStarted)
                         {
-                            _handshakeDones[sourceLang].TrySetResult(true);
+                            session.HandshakeDones[sourceLang].TrySetResult(true);
                             Logger.LogInformation("Session (ID={sessionId}) started.", sessionId);
                         }
                         else if (eventType == EV.Type.SessionFailed)
                         {
                             Logger.LogWarning("Session failed: {StatusCode} {Message}", resp.ResponseMeta?.StatusCode, resp.ResponseMeta?.Message);
-                            _sessionEnded.TrySetResult(true);
+                            session.SessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.SessionCanceled)
                         {
                             Logger.LogWarning("Session canceled");
-                            _sessionEnded.TrySetResult(true);
+                            session.SessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.SessionFinished)
                         {
                             Logger.LogInformation("Session finished");
-                            _sessionEnded.TrySetResult(true);
+                            session.SessionEnded.TrySetResult(true);
                         }
                         else if (eventType == EV.Type.TtssentenceEnd)
                         {
-                            _singleRecvTime = resp.StartTime;
-
                             // Recognized，断句发生，可以在这里处理字幕显示逻辑，比如把sourceText和targetText发送到前端显示，然后清空StringBuilder准备下一句的字幕
                             var original = sourceSb.ToString();
                             if (string.IsNullOrEmpty(original))
@@ -269,31 +266,32 @@ namespace EchoBot.Media
                             var transleteDic = new Dictionary<string, string> { { detectTarLang, translatedText } };
 
                             Logger.LogDebug("RECOGNIZED in {sourceLang}: Text={original}", sourceLang, original);
-                            await BatchTranslateAsync(original, sourceLang, (ulong)(resp.StartTime + _backlogRecvTime), TimeSpan.FromSeconds(30), CurrentSpeakerId, transleteDic);
+                            await BatchTranslateAsync(original, sourceLang, session.TranslatingTime, TimeSpan.FromSeconds(30), speakerId, transleteDic);
 
-                            if (_recvAudio.Length > 0)
+                            if (session.RecvAudio.Length > 0)
                             {
-                                _ = TextToSpeech(_recvAudio.ToArray(), detectTarLang, sourceLang, CurrentSpeakerId);
+                                _ = TextToSpeech(session.RecvAudio.ToArray(), detectTarLang, sourceLang, speakerId);
 
-                                _recvAudio.SetLength(0); // 清空缓冲
-                                _recvAudio.Position = 0;
+                                session.RecvAudio.SetLength(0); // 清空缓冲
+                                session.RecvAudio.Position = 0;
                             }
 
                             sourceSb.Clear();
                             tranlatedSb.Clear();
+                            session.TranslatingTime = 0;
                         }
                         else
                         {
                             // Regular data/partial (Recognizing)
-                            var speakerId = CurrentSpeakerId;
                             if (resp.Data != null)
                             {
-                                await _recvAudio.WriteAsync(resp.Data.ToByteArray());
+                                await session.RecvAudio.WriteAsync(resp.Data.ToByteArray());
                             }
                             if (!string.IsNullOrEmpty(resp.Text) && new List<EV.Type> { EV.Type.SourceSubtitleResponse, EV.Type.TranslationSubtitleResponse }.Contains(resp.Event))
                             {
                                 (resp.Event == EV.Type.SourceSubtitleResponse ? sourceSb : tranlatedSb).Append(resp.Text);
 
+                                session.TranslatingTime = session.TranslatingTime <= 0 ? (ulong)DateTime.Now.Ticks : session.TranslatingTime;
                                 var partialText = sourceSb.ToString();
                                 var translatedText = tranlatedSb.ToString();
 
@@ -307,7 +305,7 @@ namespace EchoBot.Media
 
                                 Logger.LogDebug("RECOGNIZING in {sourceLang}: Text={Text}", sourceLang, partialText);
 
-                                await Transcript(captions, false, (ulong)(_singleRecvTime + _backlogRecvTime), TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
+                                await Transcript(captions, false, session.TranslatingTime, TimeSpan.FromSeconds(30), sourceLang, partialText, speakerId);
                             }
                         }
                     }
@@ -322,11 +320,11 @@ namespace EchoBot.Media
             catch (Exception e)
             {
                 Logger.LogError(e, "Receiver error");
-                _sessionEnded.TrySetResult(true);
+                session.SessionEnded.TrySetResult(true);
             }
         }
 
-        private async Task Reconnect(ClientWebSocket? wsClient, string sourceLang)
+        private async Task Reconnect(SpeakerSession session, ClientWebSocket? wsClient, string sourceLang, string speakerId)
         {
             // Attempt to close the current socket and establish a new one, then exit this receive loop.
             try
@@ -347,29 +345,26 @@ namespace EchoBot.Media
                 // Create a new websocket and replace the dictionary entry
                 var sessionId = Guid.NewGuid().ToString();
                 var newClient = await CreateWsClient().ConfigureAwait(false);
-                _wsClients[sourceLang] = newClient;
-                _sessionIds[sourceLang] = sessionId;
+                session.WsClients[sourceLang] = newClient;
+                session.SessionIds[sourceLang] = sessionId;
 
                 // Replace handshake tcs before StartSession so SessionStarted can complete the correct task
                 var handshakeTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _handshakeDones[sourceLang] = handshakeTcs;
+                session.HandshakeDones[sourceLang] = handshakeTcs;
 
                 // Start new receive loop and re-send StartSession to re-handshake
-                _ = ReceiveMessage(sessionId, sourceLang);
-                await StartSession(sessionId, sourceLang).ConfigureAwait(false);
+                _ = ReceiveMessage(session, sessionId, sourceLang, speakerId);
+                await StartSession(session, sessionId, sourceLang).ConfigureAwait(false);
                 // Wait handshake
                 await handshakeTcs.Task.ConfigureAwait(false);
 
-                _backlogRecvTime += _singleRecvTime; // Add time of last received message to backlog time, so translated captions don't jump back in time after reconnect
-                _singleRecvTime = 0;
-
-                if (_finishFlag)
-                    await FinishSession(sessionId, sourceLang);
+                if (session.FinishFlag)
+                    await FinishSession(session, sourceLang);
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Reconnect failed for session {sessionId} sourceLang {sourceLang}", _sessionIds[sourceLang], sourceLang);
-                _sessionEnded.TrySetResult(true);
+                Logger.LogError(ex, "Reconnect failed for session {sessionId} sourceLang {sourceLang}", session.SessionIds[sourceLang], sourceLang);
+                session.SessionEnded.TrySetResult(true);
             }
         }
 
@@ -378,22 +373,82 @@ namespace EchoBot.Media
             await Task.CompletedTask;
         }
 
-        private byte[] GetBatchBuffer(byte[]? buffer, int bufferLength)
+        private void StartKeepAliveLoop(SpeakerSession session)
+        {
+            if (session.KeepAliveTask != null)
+                return;
+
+            session.KeepAliveTask = Task.Run(async () =>
+            {
+                var silenceChunk = new byte[ChunkSize];
+
+                while (!session.KeepAliveCts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(SilenceSendInterval, session.KeepAliveCts.Token).ConfigureAwait(false);
+
+                        if (session.SessionEnded.Task.IsCompleted)
+                            continue;
+
+                        var lastAudioTicks = Volatile.Read(ref session.LastAudioTicks);
+                        if (lastAudioTicks == 0)
+                            continue;
+
+                        var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - lastAudioTicks);
+                        if (idle < SilenceStartAfterNoAudio)
+                            continue;
+
+                        if (!session.WsClients.Values.All(c => c.State == WebSocketState.Open))
+                            continue;
+
+                        await SendChunkAsync(session, silenceChunk).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogDebug(ex, "Send silence chunk failed for speaker {speakerId}", session.SpeakerId);
+                    }
+                }
+            });
+        }
+
+        private async Task SendChunkAsync(SpeakerSession session, byte[] chunk)
+        {
+            var tasks = _translateTarget.Keys.Select(l =>
+            {
+                var chunkReq = new TranslateRequest
+                {
+                    RequestMeta = new RequestMeta { SessionID = session.SessionIds[l] },
+                    Event = EV.Type.TaskRequest,
+                    SourceAudio = new Audio { BinaryData = ByteString.CopyFrom(chunk) }
+                };
+
+                return session.WsClients[l].SendAsync(new ArraySegment<byte>(chunkReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
+            });
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+
+        private byte[] GetBatchBuffer(SpeakerSession session, byte[]? buffer, int bufferLength)
         {
             // Append incoming 640-byte buffer and send only when we have exactly one full ChunkSize (5 * 640).
             byte[] chunkToSend = null;
-            lock (_sendLock)
+            lock (session.SendLock)
             {
                 // Copy incoming data (assumed to be 640 bytes) into send buffer
-                Array.Copy(buffer, 0, _sendBuffer, _sendLen, bufferLength);
-                _sendLen += bufferLength;
+                Array.Copy(buffer, 0, session.SendBuffer, session.SendLen, bufferLength);
+                session.SendLen += bufferLength;
 
                 // When we've accumulated exactly ChunkSize, prepare chunk and reset
-                if (_sendLen >= ChunkSize)
+                if (session.SendLen >= ChunkSize)
                 {
                     chunkToSend = new byte[ChunkSize];
-                    Array.Copy(_sendBuffer, 0, chunkToSend, 0, ChunkSize);
-                    _sendLen = 0;
+                    Array.Copy(session.SendBuffer, 0, chunkToSend, 0, ChunkSize);
+                    session.SendLen = 0;
                 }
             }
             return chunkToSend;
@@ -411,8 +466,16 @@ namespace EchoBot.Media
         public override async Task ShutDownAsync()
         {
             await base.ShutDownAsync().ConfigureAwait(false);
-            await Task.WhenAll(_translateTarget.Keys.Select(l => FinishSession(_sessionIds[l], l))).ConfigureAwait(false);
-            _finishFlag = true;
+            foreach (var session in _speakerSessions.Values)
+            {
+                session.FinishFlag = true;
+                session.KeepAliveCts.Cancel();
+            }
+
+            var finishTasks = _speakerSessions.Values
+                .SelectMany(session => _translateTarget.Keys.Select(lang => FinishSession(session, lang)));
+
+            await Task.WhenAll(finishTasks).ConfigureAwait(false);
         }
     }
 }
