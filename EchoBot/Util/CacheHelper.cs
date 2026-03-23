@@ -43,6 +43,61 @@ namespace EchoBot.Util
             await _mux.GetDatabase().KeyDeleteAsync(key);
         }
 
+        /// <summary>
+        /// 删除某个父 key 下所有以 ":" 分隔的子节点缓存。
+        /// 例如 parentKey="user:1"，会删除 "user:1:*"。
+        /// </summary>
+        /// <param name="parentKey">父 key（不带末尾冒号）</param>
+        /// <param name="pageSize">每次扫描批次大小</param>
+        /// <param name="includeParent">是否同时删除父 key 本身</param>
+        /// <returns>实际删除的 key 数量</returns>
+        public async Task<long> DeleteChildrenAsync(string parentKey, int pageSize = 1000, bool includeParent = false)
+        {
+            if (string.IsNullOrWhiteSpace(parentKey))
+                return 0;
+
+            var db = _mux.GetDatabase();
+            var dbNumber = db.Database < 0 ? 0 : db.Database;
+            var pattern = $"{parentKey}:*";
+            long deleted = 0;
+
+            foreach (var endpoint in _mux.GetEndPoints())
+            {
+                var server = _mux.GetServer(endpoint);
+                if (!server.IsConnected)
+                    continue;
+
+                // 从库只读，不执行删除
+                if (server.IsReplica)
+                    continue;
+
+                var batch = new List<RedisKey>(pageSize);
+                foreach (var key in server.Keys(dbNumber, pattern, pageSize: pageSize))
+                {
+                    batch.Add(key);
+                    if (batch.Count >= pageSize)
+                    {
+                        deleted += await db.KeyDeleteAsync(batch.ToArray()).ConfigureAwait(false);
+                        batch.Clear();
+                    }
+                }
+
+                if (batch.Count > 0)
+                {
+                    deleted += await db.KeyDeleteAsync(batch.ToArray()).ConfigureAwait(false);
+                    batch.Clear();
+                }
+            }
+
+            if (includeParent)
+            {
+                if (await db.KeyDeleteAsync(parentKey).ConfigureAwait(false))
+                    deleted++;
+            }
+
+            return deleted;
+        }
+
         public async Task SetAsync(string key, TimeSpan timeSpan, object obj)
         {
             await _mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);

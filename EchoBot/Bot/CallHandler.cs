@@ -199,6 +199,7 @@ namespace EchoBot.Bot
             if (this.BotMediaStream.Participants.Count == 0)
             {
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
+                await _cacheHelper.DeleteChildrenAsync(CacheConstants.MsAudioParticipantsKey(_threadId, null));
             }
         }
 

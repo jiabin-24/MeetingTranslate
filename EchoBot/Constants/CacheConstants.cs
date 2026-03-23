@@ -2,18 +2,19 @@
 {
     public static class CacheConstants
     {
-        public static string BotJoinLockKey(string threadId) => $"bot_join_lock_{threadId}";
+        public static string BotJoinLockKey(string threadId) => $"bot_join_lock:{threadId}";
 
-        public static string AcsConnectKey(string groupId) => $"CallConnectionId_{groupId}";
+        public static string AcsConnectKey(string groupId) => $"CallConnectionId:{groupId}";
 
-        public static string AcsConnectLockKey(string groupId) => $"CallConnectionLock_{groupId}";
+        public static string AcsConnectLockKey(string groupId) => $"CallConnectionLock:{groupId}";
 
-        public static string AcsRoomKey(string groupId) => $"RoomId_{groupId}";
+        public static string AcsRoomKey(string groupId) => $"RoomId:{groupId}";
 
-        public static string AcsRoomParticipantKey(string groupId) => $"RoomParticipantId_{groupId}";
+        public static string AcsRoomParticipantKey(string groupId) => $"RoomParticipantId:{groupId}";
 
-        public static string MsParticipantsKey(string threadId, string speakerId) => $"Participants_{threadId}-{speakerId}";
+        public static string MsParticipantsKey(string threadId, string speakerId) => $"Participants:{threadId}:{speakerId}";
 
-        public static string MsAudioParticipantsKey(string threadId, string audioId) => $"AudioParticipants_{threadId}-{audioId}";
+        public static string MsAudioParticipantsKey(string threadId, string? audioId) => string.IsNullOrEmpty(audioId) ? $"AudioParticipants:{threadId}"
+            : $"AudioParticipants:{threadId}:{audioId}";
     }
 }
