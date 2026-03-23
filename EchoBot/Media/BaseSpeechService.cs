@@ -41,8 +41,7 @@ namespace EchoBot.Media
 
         internal List<IParticipant> Participants;
 
-        // Mapping between audio socket Id and participant Id.
-        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(AudioId, p => IdentityToParticipant(AudioId(p), p.Resource.Info.Identity.User));
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(SpeakerId, p => IdentityToParticipant(SpeakerId(p), p.Resource.Info.Identity.User));
 
         // Logger created for the runtime type so derived classes get a category with their actual type
         protected ILogger Logger;
@@ -89,7 +88,7 @@ namespace EchoBot.Media
             SendMediaBuffer?.Invoke(this, e);
         }
 
-        protected async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string audioId, Dictionary<string, string>? captions = null)
+        protected async Task BatchTranslateAsync(string original, string sourceLang, ulong offset, TimeSpan duration, string speakerId, Dictionary<string, string>? captions = null)
         {
             try
             {
@@ -106,7 +105,7 @@ namespace EchoBot.Media
                     translated = Util.Utilities.ConcatDictionary(transEndpoints.Keys.ToDictionary(to => to, to => original), captions);
                 }
 
-                await Transcript(translated, true, offset, duration, sourceLang, original, audioId);
+                await Transcript(translated, true, offset, duration, sourceLang, original, speakerId);
             }
             catch (Exception ex)
             {
@@ -115,7 +114,7 @@ namespace EchoBot.Media
         }
 
         protected async Task Transcript(IReadOnlyDictionary<string, string> captions, bool isFinal, ulong offset, TimeSpan duration,
-            string sourceLang, string sourceText, string audioId)
+            string sourceLang, string sourceText, string speakerId)
         {
             long startMs = (long)(offset / 10_000UL); // 1ms = 10,000 ticks，offset 是针对 Speech Regonizer 识别的时差（不能用于多 Regonizer 的线性排序）
             long endMs = startMs + (long)duration.TotalMilliseconds;
@@ -123,7 +122,7 @@ namespace EchoBot.Media
             sourceLang = AppConstants.LangMap.TryGetValue(sourceLang, out string? value) ? value : sourceLang.Split('-')[0];
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
-            var speaker = await GetParticipant(audioId);
+            var speaker = await GetParticipant(speakerId);
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: ThreadId,
@@ -158,16 +157,17 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task<Models.Participant> GetParticipant(string audioId)
+        private async Task<Models.Participant> GetParticipant(string speakerId)
         {
-            if (!AudioToIdentityMap.TryGetValue(audioId, out var speaker))
+            if (!AudioToIdentityMap.TryGetValue(speakerId, out var speaker))
             {
-                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, audioId), TimeSpan.FromSeconds(10));
-                var displayName = string.IsNullOrEmpty(speakerName) ? $"Speaker-{audioId}" : speakerName;
+                // 若找不到对应的 speakerId，尝试从缓存获取，此时是 audioId（可能存在音频流与身份信息不同步的情况）
+                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, speakerId), TimeSpan.FromSeconds(10));
+                var displayName = string.IsNullOrEmpty(speakerName) ? $"Speaker-{speakerId}" : speakerName;
 
                 speaker = new Models.Participant
                 {
-                    Id = audioId,
+                    Id = speakerId,
                     DisplayName = displayName
                 };
             }
@@ -274,22 +274,22 @@ namespace EchoBot.Media
             return dict;
         }
 
-        private static string AudioId(IParticipant participant) => participant.Resource.MediaStreams.FirstOrDefault(x => x.MediaType == Modality.Audio).SourceId;
+        private static string SpeakerId(IParticipant participant) => participant.Resource.Info.Identity?.User?.Id;
 
-        private static Models.Participant IdentityToParticipant(string sourceId, Identity? identity)
+        private static Models.Participant IdentityToParticipant(string speakerId, Identity? identity)
         {
             if (identity == null)
             {
                 return new Models.Participant
                 {
-                    Id = sourceId,
-                    DisplayName = string.Empty
+                    Id = speakerId,
+                    DisplayName = $"Speaker-{speakerId}"
                 };
             }
             return new Models.Participant
             {
                 Id = identity.Id!,
-                DisplayName = identity?.DisplayName ?? string.Empty
+                DisplayName = identity?.DisplayName ?? $"Speaker-{identity.Id}"
             };
         }
     }
