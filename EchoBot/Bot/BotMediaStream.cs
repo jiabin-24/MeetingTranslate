@@ -5,10 +5,8 @@ using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common;
 using Microsoft.Graph.Communications.Common.Telemetry;
-using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
-using StackExchange.Redis;
 using System.Runtime.InteropServices;
 
 namespace EchoBot.Bot
@@ -233,8 +231,7 @@ namespace EchoBot.Bot
             var participant = _callHandler.Call.Participants
                 .SingleOrDefault(x => x.Resource.IsInLobby == false && x.Resource.MediaStreams.Any(y => y.SourceId == audioSourceId));
 
-            var speakerId = CallHandler.TryGetParticipantIdentity(participant)?.Id;
-            return string.IsNullOrWhiteSpace(speakerId) ? audioSourceId : speakerId;
+            return string.IsNullOrWhiteSpace(participant?.Id) ? audioSourceId : participant.Id;
         }
 
         private void OnSendMediaBuffer(object? sender, Media.MediaStreamEventArgs e)

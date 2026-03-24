@@ -41,7 +41,7 @@ namespace EchoBot.Media
 
         private readonly CallHandler _callHandler;
 
-        private Dictionary<string, Models.Participant> AudioToIdentityMap => _callHandler.Call.Participants.ToDictionary(SpeakerId, IdentityToParticipant);
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => _callHandler.Call.Participants.ToDictionary(p => p.Id, IdentityToParticipant);
 
         protected ILogger Logger;
 
@@ -161,13 +161,12 @@ namespace EchoBot.Media
             if (!AudioToIdentityMap.TryGetValue(speakerId, out var speaker))
             {
                 // 若找不到对应的 speakerId，尝试从缓存获取，此时是 audioId（可能存在音频流与身份信息不同步的情况）
-                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, speakerId), TimeSpan.FromSeconds(10));
-                var displayName = string.IsNullOrEmpty(speakerName) ? $"Speaker-{speakerId}" : speakerName;
+                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, audioId: speakerId), TimeSpan.FromSeconds(10));
 
                 speaker = new Models.Participant
                 {
                     Id = speakerId,
-                    DisplayName = displayName
+                    DisplayName = !string.IsNullOrEmpty(speakerName) ? speakerName : $"Speaker-{speakerId}"
                 };
             }
 
@@ -273,25 +272,14 @@ namespace EchoBot.Media
             return dict;
         }
 
-        private static string SpeakerId(IParticipant participant) => CallHandler.TryGetParticipantIdentity(participant)?.Id ?? CallHandler.GetAudioSourceId(participant);
-
         private static Models.Participant IdentityToParticipant(IParticipant participant)
         {
             var identity = CallHandler.TryGetParticipantIdentity(participant);
-            var speakerId = identity?.Id ?? CallHandler.GetAudioSourceId(participant);
 
-            if (identity == null)
-            {
-                return new Models.Participant
-                {
-                    Id = speakerId,
-                    DisplayName = $"Speaker-{speakerId}"
-                };
-            }
             return new Models.Participant
             {
-                Id = identity.Id!,
-                DisplayName = identity?.DisplayName ?? $"Speaker-{identity.Id}"
+                Id = participant.Id,
+                DisplayName = identity?.DisplayName ?? $"Speaker-{CallHandler.GetAudioSourceId(participant)}"
             };
         }
     }
