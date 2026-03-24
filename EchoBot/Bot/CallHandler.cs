@@ -195,14 +195,13 @@ namespace EchoBot.Bot
         private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
         {
             var identity = TryGetParticipantIdentity(participant);
-            var audioSourceId = participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
-            var displayName = identity?.DisplayName;
+            var audioSourceId = GetAudioSourceId(participant);
 
             if (!string.IsNullOrEmpty(audioSourceId))
             {
                 GraphLogger.Info($"Participant {participant.Id} audio source ready: {audioSourceId}");
 
-                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), displayName);
+                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), identity?.DisplayName);
             }
             else if (forceSubscribe)
             {
@@ -210,6 +209,11 @@ namespace EchoBot.Bot
             }
 
             await Task.CompletedTask;
+        }
+
+        public static string GetAudioSourceId(IParticipant participant)
+        {
+            return participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
         }
 
         public static Identity TryGetParticipantIdentity(IParticipant participant)

@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Common;
-using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Newtonsoft.Json;
 using StackExchange.Redis;
@@ -274,12 +273,12 @@ namespace EchoBot.Media
             return dict;
         }
 
-        private static string SpeakerId(IParticipant participant) => CallHandler.TryGetParticipantIdentity(participant)?.Id;
+        private static string SpeakerId(IParticipant participant) => CallHandler.TryGetParticipantIdentity(participant)?.Id ?? CallHandler.GetAudioSourceId(participant);
 
         private static Models.Participant IdentityToParticipant(IParticipant participant)
         {
             var identity = CallHandler.TryGetParticipantIdentity(participant);
-            var speakerId = identity?.Id ?? participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
+            var speakerId = identity?.Id ?? CallHandler.GetAudioSourceId(participant);
 
             if (identity == null)
             {
