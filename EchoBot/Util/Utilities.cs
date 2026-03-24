@@ -30,6 +30,16 @@ namespace EchoBot.Util
                 action: action);
         }
 
+        /// <summary>
+        /// 确保同一时间内（多实例）只有一个实例在执行操作
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="mux"></param>
+        /// <param name="lockKey"></param>
+        /// <param name="expiry"></param>
+        /// <param name="onLockNotAcquired"></param>
+        /// <param name="action"></param>
+        /// <returns></returns>
         public static async Task<T> ExecuteWithDistributedLockAsync<T>(
             IConnectionMultiplexer mux,
             string lockKey,
@@ -62,6 +72,53 @@ namespace EchoBot.Util
                     new RedisKey[] { lockKey },
                     new RedisValue[] { lockToken }).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// 确保多实例场景下，一个操作被执行后，不再继续被其他实例执行，直到过期时间到。适用于操作完成后结果可以被其他实例复用的场景。
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="mux"></param>
+        /// <param name="stateKey"></param>
+        /// <param name="pendingState"></param>
+        /// <param name="pendingExpiry"></param>
+        /// <param name="completedExpiry"></param>
+        /// <param name="onStateAlreadyExists"></param>
+        /// <param name="action"></param>
+        /// <param name="completedStateSelector"></param>
+        /// <returns></returns>
+        public static async Task<T> ExecuteWithSharedStateAsync<T>(
+            IConnectionMultiplexer mux,
+            string stateKey,
+            RedisValue pendingState,
+            TimeSpan pendingExpiry,
+            TimeSpan completedExpiry,
+            Func<RedisValue, Task<T>> onStateAlreadyExists,
+            Func<Task<T>> action,
+            Func<T, RedisValue> completedStateSelector)
+        {
+            var db = mux.GetDatabase();
+            var existingState = await db.StringGetAsync(stateKey).ConfigureAwait(false);
+            if (existingState.HasValue)
+            {
+                return await onStateAlreadyExists(existingState).ConfigureAwait(false);
+            }
+
+            await db.StringSetAsync(stateKey, pendingState, pendingExpiry).ConfigureAwait(false);
+
+            T result;
+            try
+            {
+                result = await action().ConfigureAwait(false);
+            }
+            catch
+            {
+                await db.KeyDeleteAsync(stateKey).ConfigureAwait(false);
+                throw;
+            }
+
+            await db.StringSetAsync(stateKey, completedStateSelector(result), completedExpiry).ConfigureAwait(false);
+            return result;
         }
 
         /// <summary>

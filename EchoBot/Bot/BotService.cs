@@ -39,7 +39,6 @@ namespace EchoBot.Bot
         IBotMediaLogger mediaLogger,
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
-        private static readonly TimeSpan JoinStateExpiry = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromHours(12);
 
         /// <summary>
@@ -205,30 +204,17 @@ namespace EchoBot.Bot
                 () => $"Join call is already in progress for thread '{threadId}'.",
                 async () =>
                 {
-                    var db = _mux.GetDatabase();
-
-                    if (!this.CallHandlers.TryGetValue(threadId, out CallHandler? call))
+                    if (!this.CallHandlers.TryGetValue(threadId, out CallHandler? _))
                     {
-                        var existingCallId = await db.StringGetAsync(CacheConstants.CallConnectionStateKey(threadId)).ConfigureAwait(false);
-                        if (existingCallId.HasValue)
-                        {
-                            throw new InvalidOperationException($"Call already exists for thread '{threadId}' ({existingCallId}).");
-                        }
-
-                        await db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), "joining", JoinStateExpiry).ConfigureAwait(false);
-
-                        ICall statefulCall;
-                        try
-                        {
-                            statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
-                        }
-                        catch
-                        {
-                            await db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId)).ConfigureAwait(false);
-                            throw;
-                        }
-
-                        await db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), statefulCall.Id, CallConnectionExpiry).ConfigureAwait(false);
+                        var statefulCall = await Util.Utilities.ExecuteWithSharedStateAsync(
+                            _mux,
+                            CacheConstants.CallConnectionStateKey(threadId),
+                            pendingState: "joining",
+                            pendingExpiry: TimeSpan.FromMinutes(15),
+                            completedExpiry: CallConnectionExpiry,
+                            onStateAlreadyExists: existingState => throw new InvalidOperationException($"Call already exists for thread '{threadId}' ({existingState})."),
+                            action: () => this.Client.Calls().AddAsync(joinParams, scenarioId),
+                            completedStateSelector: call => call.Id).ConfigureAwait(false);
 
                         _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
                         return statefulCall;
@@ -341,14 +327,15 @@ namespace EchoBot.Bot
             foreach (var call in args.RemovedResources)
             {
                 var threadId = call.Resource.ChatInfo.ThreadId!;
-                _ = db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId));
                 if (this.CallHandlers.TryRemove(threadId, out CallHandler? handler))
                 {
-                    Task.Run(async () => {
+                    Task.Run(async () =>
+                    {
                         await handler.BotMediaStream.ShutdownAsync();
                         handler.Dispose();
                     });
                 }
+                _ = db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId));
             }
         }
 
