@@ -1,8 +1,6 @@
-﻿using Azure.AI.Agents.Persistent;
-using EchoBot.Constants;
+﻿using EchoBot.Constants;
 using EchoBot.Util;
 using Microsoft.Graph.Communications.Calls;
-using Microsoft.Graph.Communications.Calls.Media;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
 using Microsoft.Graph.Models;
@@ -50,7 +48,7 @@ namespace EchoBot.Bot
 
             this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
-            this.BotMediaStream = new BotMediaStream(this.Call.GetLocalMediaSession(), this.Call.Id, _threadId, this.GraphLogger);
+            this.BotMediaStream = new BotMediaStream(this, _threadId, this.GraphLogger);
         }
 
         /// <inheritdoc/>
@@ -119,37 +117,19 @@ namespace EchoBot.Bot
         /// <param name="added">if set to <c>true</c> [added].</param>
         /// <param name="participantDisplayName">Display name of the participant.</param>
         /// <returns>System.String.</returns>
-        private async Task<string> UpdateParticipant(List<IParticipant> participants, IParticipant participant, bool added, string participantDisplayName = "")
+        private async Task<string> UpdateParticipant(IParticipant participant, bool added, string participantDisplayName = "")
         {
             if (added)
             {
-                if (!participants.Any(p => p.Id == participant.Id))
-                {
-                    participants.Add(participant);
-                    participant.OnUpdated += this._participantUpdatedHandler;
-                }
-                else
-                {
-                    var index = participants.FindIndex(p => p.Id == participant.Id);
-                    if (index >= 0)
-                    {
-                        participants[index] = participant;
-                    }
-                }
+                participant.OnUpdated += this._participantUpdatedHandler;
 
                 if (!string.IsNullOrEmpty(participantDisplayName))
                     this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
+
                 await SubscribeToParticipantAudio(participant, forceSubscribe: false);
             }
             else
             {
-                var existingParticipant = participants.FirstOrDefault(p => p.Id == participant.Id);
-                if (existingParticipant != null)
-                {
-                    existingParticipant.OnUpdated -= this._participantUpdatedHandler;
-                    participants.Remove(existingParticipant);
-                }
-
                 participant.OnUpdated -= this._participantUpdatedHandler;
                 await UnsubscribeFromParticipantAudio(participant);
             }
@@ -173,13 +153,13 @@ namespace EchoBot.Bot
 
                 if (participantDetails != null)
                 {
-                    json = await UpdateParticipant(this.BotMediaStream.Participants, participant, added, participantDetails.DisplayName);
+                    json = await UpdateParticipant(participant, added, participantDetails.DisplayName);
                 }
                 else if (participant.Resource.Info.Identity.AdditionalData?.Count > 0)
                 {
                     if (CheckParticipantIsUsable(participant))
                     {
-                        json = await UpdateParticipant(this.BotMediaStream.Participants, participant, added);
+                        json = await UpdateParticipant(participant, added);
                     }
                 }
 
@@ -197,7 +177,7 @@ namespace EchoBot.Bot
             await UpdateParticipants(args.AddedResources);
             await UpdateParticipants(args.RemovedResources, false);
 
-            if (this.BotMediaStream.Participants.Count == 0)
+            if (this.Call.Participants.Count == 0)
             {
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
 
@@ -208,12 +188,6 @@ namespace EchoBot.Bot
 
         private async Task OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
-            var index = this.BotMediaStream.Participants.FindIndex(p => p.Id == sender.Id);
-            if (index >= 0)
-            {
-                this.BotMediaStream.Participants[index] = sender;
-            }
-
             await SubscribeToParticipantAudio(sender, forceSubscribe: false);
         }
 

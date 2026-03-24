@@ -1,12 +1,12 @@
 ﻿using Data.Speech.Ast;
 using Data.Speech.Common;
 using Data.Speech.Understanding;
+using EchoBot.Bot;
 using EchoBot.Constants;
 using EchoBot.Models.Configuration;
 using EchoBot.Util;
 using Google.Protobuf;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph.Communications.Calls;
 using Microsoft.Skype.Bots.Media;
 using NAudio.Wave;
 using System.Collections.Concurrent;
@@ -17,7 +17,7 @@ using EV = Data.Speech.Event;
 
 namespace EchoBot.Media
 {
-    public class ByteDanceSpeechService(string threadId, List<IParticipant> participants) : BaseSpeechService(threadId, participants)
+    public class ByteDanceSpeechService(string threadId, CallHandler callHandler) : BaseSpeechService(threadId, callHandler)
     {
         private readonly ByteDanceSettings _byteDanceSettings = ServiceLocator.GetRequiredService<IOptions<ByteDanceSettings>>().Value;
 

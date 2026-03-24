@@ -40,11 +40,10 @@ namespace EchoBot.Media
 
         protected readonly string ThreadId;
 
-        internal List<IParticipant> Participants;
+        private readonly CallHandler _callHandler;
 
-        private Dictionary<string, Models.Participant> AudioToIdentityMap => Participants.ToDictionary(SpeakerId, p => IdentityToParticipant(SpeakerId(p), CallHandler.TryGetParticipantIdentity(p)));
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => _callHandler.Call.Participants.ToDictionary(SpeakerId, IdentityToParticipant);
 
-        // Logger created for the runtime type so derived classes get a category with their actual type
         protected ILogger Logger;
 
         private readonly ITranslatorClient _translatorClient;
@@ -55,10 +54,10 @@ namespace EchoBot.Media
 
         private readonly CacheHelper _cacheHelper;
 
-        public BaseSpeechService(string threadId, List<IParticipant> participants)
+        public BaseSpeechService(string threadId, CallHandler callHandler)
         {
             ThreadId = threadId;
-            Participants = participants;
+            _callHandler = callHandler;
             TranslatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
 
@@ -277,8 +276,11 @@ namespace EchoBot.Media
 
         private static string SpeakerId(IParticipant participant) => CallHandler.TryGetParticipantIdentity(participant)?.Id;
 
-        private static Models.Participant IdentityToParticipant(string speakerId, Identity? identity)
+        private static Models.Participant IdentityToParticipant(IParticipant participant)
         {
+            var identity = CallHandler.TryGetParticipantIdentity(participant);
+            var speakerId = identity?.Id ?? participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
+
             if (identity == null)
             {
                 return new Models.Participant

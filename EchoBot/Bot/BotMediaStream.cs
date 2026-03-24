@@ -8,7 +8,6 @@ using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
 using System.Runtime.InteropServices;
-using System.Linq;
 
 namespace EchoBot.Bot
 {
@@ -20,7 +19,7 @@ namespace EchoBot.Bot
         /// <summary>
         /// The participants
         /// </summary>
-        internal List<IParticipant> Participants;
+        internal List<IParticipant> Participants = [];
 
         /// <summary>
         /// The audio socket
@@ -36,6 +35,7 @@ namespace EchoBot.Bot
         private readonly TaskCompletionSource<bool> startVideoPlayerCompleted;
         private AudioVideoFramePlayerSettings audioVideoFramePlayerSettings;
         private List<AudioMediaBuffer> audioMediaBuffers = [];
+        private readonly CallHandler _callHandler;
         private int shutdown;
 
         public BaseSpeechService LanguageService { get; private set; }
@@ -43,36 +43,33 @@ namespace EchoBot.Bot
         /// <summary>
         /// Initializes a new instance of the <see cref="BotMediaStream" /> class.
         /// </summary>
-        /// <param name="mediaSession">The media session.</param>
-        /// <param name="callId">The call identity</param>
+        /// <param name="callHandler">The call handler.</param>
         /// <param name="threadId">The thread identity</param>
         /// <param name="graphLogger">The Graph logger.</param>
-        /// <param name="settings">Azure settings</param>
         /// <exception cref="InvalidOperationException">A mediaSession needs to have at least an audioSocket</exception>
         public BotMediaStream(
-            ILocalMediaSession mediaSession,
-            string callId,
+            CallHandler callHandler,
             string threadId,
             IGraphLogger graphLogger
         ) : base(graphLogger)
         {
-            ArgumentVerifier.ThrowOnNullArgument(mediaSession, nameof(mediaSession));
+            ArgumentVerifier.ThrowOnNullArgument(callHandler, nameof(callHandler));
 
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
+            _callHandler = callHandler;
 
-            this.Participants = [];
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
 
             // Subscribe to the audio media.
-            this._audioSocket = mediaSession.AudioSocket ?? throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
+            this._audioSocket = callHandler.Call.GetLocalMediaSession().AudioSocket ?? throw new InvalidOperationException("A mediaSession needs to have at least an audioSocket");
             var ignoreTask = this.StartAudioVideoFramePlayerAsync().ForgetAndLogExceptionAsync(this.GraphLogger, "Failed to start the player");
 
             this._audioSocket.AudioSendStatusChanged += OnAudioSendStatusChanged;
             this._audioSocket.AudioMediaReceived += this.OnAudioMediaReceived;
 
             var config = ServiceLocator.GetRequiredService<IConfiguration>();
-            LanguageService = "ByteDance".Equals(config["SpeechServiceModel"]) ? new ByteDanceSpeechService(threadId, Participants) : new AzureSpeechService(threadId, Participants);
+            LanguageService = "ByteDance".Equals(config["SpeechServiceModel"]) ? new ByteDanceSpeechService(threadId, callHandler) : new AzureSpeechService(threadId, callHandler);
             LanguageService.SendMediaBuffer += this.OnSendMediaBuffer;
         }
 
@@ -223,14 +220,11 @@ namespace EchoBot.Bot
             if (string.IsNullOrWhiteSpace(audioSourceId))
                 return "unknown";
 
-            var participant = Participants.FirstOrDefault(p =>
-                string.Equals(
-                    p.Resource?.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId,
-                    audioSourceId,
-                    StringComparison.Ordinal));
+            var participant = _callHandler.Call.Participants
+                .SingleOrDefault(x => x.Resource.IsInLobby == false && x.Resource.MediaStreams.Any(y => y.SourceId == audioSourceId));
 
-            var userId = participant?.Resource?.Info?.Identity?.User?.Id;
-            return string.IsNullOrWhiteSpace(userId) ? audioSourceId : userId;
+            var speakerId = CallHandler.TryGetParticipantIdentity(participant)?.Id;
+            return string.IsNullOrWhiteSpace(speakerId) ? audioSourceId : speakerId;
         }
 
         private void OnSendMediaBuffer(object? sender, Media.MediaStreamEventArgs e)
