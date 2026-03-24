@@ -21,6 +21,8 @@ namespace EchoBot.Bot
 
         private readonly string _threadId;
 
+        private int _participantsCount;
+
         /// <summary>
         /// Gets the bot media stream.
         /// </summary>
@@ -121,6 +123,7 @@ namespace EchoBot.Bot
         {
             if (added)
             {
+                _participantsCount++;
                 participant.OnUpdated += this._participantUpdatedHandler;
 
                 if (!string.IsNullOrEmpty(participantDisplayName))
@@ -130,6 +133,7 @@ namespace EchoBot.Bot
             }
             else
             {
+                _participantsCount--;
                 participant.OnUpdated -= this._participantUpdatedHandler;
                 await UnsubscribeFromParticipantAudio(participant);
             }
@@ -177,12 +181,9 @@ namespace EchoBot.Bot
             await UpdateParticipants(args.AddedResources);
             await UpdateParticipants(args.RemovedResources, false);
 
-            if (this.Call.Participants.Count == 0)
+            if (_participantsCount <= 0)
             {
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
-
-                await _cacheHelper.DeleteChildrenAsync(CacheConstants.MsAudioParticipantsKey(_threadId, null));
-                await _cacheHelper.Mux.GetDatabase().KeyDeleteAsync(CacheConstants.MeetingCaptionKey(_threadId));
             }
         }
 

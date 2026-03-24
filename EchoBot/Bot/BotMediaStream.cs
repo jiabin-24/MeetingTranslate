@@ -1,4 +1,5 @@
-﻿using EchoBot.Media;
+﻿using EchoBot.Constants;
+using EchoBot.Media;
 using EchoBot.Util;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
@@ -7,6 +8,7 @@ using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Models;
 using Microsoft.Skype.Bots.Media;
 using Microsoft.Skype.Internal.Media.Services.Common;
+using StackExchange.Redis;
 using System.Runtime.InteropServices;
 
 namespace EchoBot.Bot
@@ -26,10 +28,13 @@ namespace EchoBot.Bot
         /// </summary>
         private readonly IAudioSocket _audioSocket;
 
+        private readonly CacheHelper _cacheHelper;
+
         /// <summary>
         /// The media stream
         /// </summary>
         private readonly ILogger _logger;
+        private readonly string _threadId;
         private AudioVideoFramePlayer audioVideoFramePlayer;
         private readonly TaskCompletionSource<bool> audioSendStatusActive;
         private readonly TaskCompletionSource<bool> startVideoPlayerCompleted;
@@ -56,7 +61,9 @@ namespace EchoBot.Bot
             ArgumentVerifier.ThrowOnNullArgument(callHandler, nameof(callHandler));
 
             _logger = ServiceLocator.GetRequiredService<ILogger<BotMediaStream>>();
+            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             _callHandler = callHandler;
+            _threadId = threadId;
 
             this.audioSendStatusActive = new TaskCompletionSource<bool>();
             this.startVideoPlayerCompleted = new TaskCompletionSource<bool>();
@@ -117,7 +124,10 @@ namespace EchoBot.Bot
             _logger.LogInformation("disposed {Count} audioMediaBUffers.", this.audioMediaBuffers.Count);
 
             this.audioMediaBuffers.Clear();
+
             await LanguageService.ShutDownAsync().ConfigureAwait(false);
+            await _cacheHelper.Mux.GetDatabase().KeyDeleteAsync(CacheConstants.MeetingCaptionKey(_threadId));
+            await _cacheHelper.DeleteChildrenAsync(CacheConstants.MsAudioParticipantsKey(_threadId, null));
         }
 
         /// <summary>

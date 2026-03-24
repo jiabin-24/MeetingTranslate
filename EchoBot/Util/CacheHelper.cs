@@ -72,9 +72,16 @@ namespace EchoBot.Util
                 if (server.IsReplica)
                     continue;
 
-                var batch = new List<RedisKey>(pageSize);
+                var slotBatches = new Dictionary<int, List<RedisKey>>();
                 foreach (var key in server.Keys(dbNumber, pattern, pageSize: pageSize))
                 {
+                    var slot = Mux.HashSlot(key);
+                    if (!slotBatches.TryGetValue(slot, out var batch))
+                    {
+                        batch = new List<RedisKey>(pageSize);
+                        slotBatches[slot] = batch;
+                    }
+
                     batch.Add(key);
                     if (batch.Count >= pageSize)
                     {
@@ -83,8 +90,11 @@ namespace EchoBot.Util
                     }
                 }
 
-                if (batch.Count > 0)
+                foreach (var batch in slotBatches.Values)
                 {
+                    if (batch.Count <= 0)
+                        continue;
+
                     deleted += await db.KeyDeleteAsync(batch.ToArray()).ConfigureAwait(false);
                     batch.Clear();
                 }
