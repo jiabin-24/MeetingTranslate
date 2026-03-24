@@ -229,7 +229,7 @@ namespace EchoBot.Bot
                 return "unknown";
 
             var participant = _callHandler.Call.Participants
-                .SingleOrDefault(x => x.Resource.IsInLobby == false && x.Resource.MediaStreams.Any(y => y.SourceId == audioSourceId));
+                .FirstOrDefault(x => x.Resource.MediaStreams.Any(y => y.SourceId == audioSourceId));
 
             return string.IsNullOrWhiteSpace(participant?.Id) ? audioSourceId : participant.Id;
         }
