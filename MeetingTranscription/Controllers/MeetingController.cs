@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using EchoBot.Constants;
+using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using StackExchange.Redis;
 using System.Collections.Generic;
@@ -21,7 +22,7 @@ namespace MeetingTranscription.Controllers
         [HttpGet("getMeetingCaptions")]
         public async Task<List<CaptionPayload>> GetMeetingCaptions([FromQuery] string threadId)
         {
-            var captions = (await _mux.GetDatabase().ListRangeAsync($"list:{threadId}"))
+            var captions = (await _mux.GetDatabase().ListRangeAsync(CacheConstants.MeetingCaptionKey(threadId)))
                 .Select(v => JsonConvert.DeserializeObject<CaptionPayload>((string)v)).OrderByDescending(c => c.StartMs).Take(100).ToList();
             return captions;
         }

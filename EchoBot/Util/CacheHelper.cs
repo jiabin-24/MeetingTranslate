@@ -6,33 +6,34 @@ namespace EchoBot.Util
 {
     public class CacheHelper
     {
-        private readonly IConnectionMultiplexer _mux;
+        public IConnectionMultiplexer Mux { get; private set; }
+
         private readonly IMemoryCache _memoryCache;
 
         public CacheHelper(IConnectionMultiplexer mux, IMemoryCache memoryCache)
         {
-            _mux = mux;
+            Mux = mux;
             _memoryCache = memoryCache;
         }
 
         public async Task<T> GetOrSetAsync<T>(string key, TimeSpan timeSpan, Func<T> func)
         {
-            if (await _mux.GetDatabase().KeyExistsAsync(key))
+            if (await Mux.GetDatabase().KeyExistsAsync(key))
             {
-                var cacheObj = (string)await _mux.GetDatabase().StringGetAsync(key);
+                var cacheObj = (string)await Mux.GetDatabase().StringGetAsync(key);
                 return JsonConvert.DeserializeObject<T>(cacheObj)!;
             }
 
             var obj = func();
-            await _mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);
+            await Mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);
             return obj;
         }
 
         public async Task<T> GetAsync<T>(string key)
         {
-            if (await _mux.GetDatabase().KeyExistsAsync(key))
+            if (await Mux.GetDatabase().KeyExistsAsync(key))
             {
-                var cacheObj = (string)await _mux.GetDatabase().StringGetAsync(key);
+                var cacheObj = (string)await Mux.GetDatabase().StringGetAsync(key);
                 return cacheObj == null ? default : JsonConvert.DeserializeObject<T>(cacheObj)!;
             }
             return default;
@@ -40,7 +41,7 @@ namespace EchoBot.Util
 
         public async Task DeleteAsync(string key)
         {
-            await _mux.GetDatabase().KeyDeleteAsync(key);
+            await Mux.GetDatabase().KeyDeleteAsync(key);
         }
 
         /// <summary>
@@ -56,14 +57,14 @@ namespace EchoBot.Util
             if (string.IsNullOrWhiteSpace(parentKey))
                 return 0;
 
-            var db = _mux.GetDatabase();
+            var db = Mux.GetDatabase();
             var dbNumber = db.Database < 0 ? 0 : db.Database;
             var pattern = $"{parentKey}:*";
             long deleted = 0;
 
-            foreach (var endpoint in _mux.GetEndPoints())
+            foreach (var endpoint in Mux.GetEndPoints())
             {
-                var server = _mux.GetServer(endpoint);
+                var server = Mux.GetServer(endpoint);
                 if (!server.IsConnected)
                     continue;
 
@@ -100,7 +101,7 @@ namespace EchoBot.Util
 
         public async Task SetAsync(string key, TimeSpan timeSpan, object obj)
         {
-            await _mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);
+            await Mux.GetDatabase().StringSetAsync(key, JsonConvert.SerializeObject(obj), timeSpan);
         }
 
         /// <summary>

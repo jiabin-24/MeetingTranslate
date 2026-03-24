@@ -1,4 +1,5 @@
-﻿using EchoBot.Constants;
+﻿using Azure.AI.Agents.Persistent;
+using EchoBot.Constants;
 using EchoBot.Util;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Calls.Media;
@@ -199,7 +200,9 @@ namespace EchoBot.Bot
             if (this.BotMediaStream.Participants.Count == 0)
             {
                 await ServiceLocator.GetRequiredService<IBotService>().EndCallByThreadIdAsync(_threadId);
+
                 await _cacheHelper.DeleteChildrenAsync(CacheConstants.MsAudioParticipantsKey(_threadId, null));
+                await _cacheHelper.Mux.GetDatabase().KeyDeleteAsync(CacheConstants.MeetingCaptionKey(_threadId));
             }
         }
 

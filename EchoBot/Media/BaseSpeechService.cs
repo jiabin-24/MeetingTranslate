@@ -145,7 +145,7 @@ namespace EchoBot.Media
                 if (!isFinal)
                     return;
 
-                var listKey = $"list:{ThreadId}";
+                var listKey = CacheConstants.MeetingCaptionKey(ThreadId);
                 await _mux.GetDatabase().ListRightPushAsync(listKey, JsonConvert.SerializeObject(payload));
                 await _mux.GetDatabase().KeyExpireAsync(listKey, TimeSpan.FromHours(1));
 

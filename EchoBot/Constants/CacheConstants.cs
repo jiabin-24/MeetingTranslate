@@ -16,5 +16,7 @@
 
         public static string MsAudioParticipantsKey(string threadId, string? audioId) => string.IsNullOrEmpty(audioId) ? $"AudioParticipants:{threadId}"
             : $"AudioParticipants:{threadId}:{audioId}";
+
+        public static string MeetingCaptionKey(string threadId) => $"MeetingCaption:{threadId}";
     }
 }

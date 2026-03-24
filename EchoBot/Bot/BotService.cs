@@ -209,7 +209,6 @@ namespace EchoBot.Bot
                         var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
 
                         _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
-                        await _mux.GetDatabase().KeyDeleteAsync($"list:{threadId}");
                         return statefulCall;
                     }
 
