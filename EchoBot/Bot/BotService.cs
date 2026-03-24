@@ -39,7 +39,8 @@ namespace EchoBot.Bot
         IBotMediaLogger mediaLogger,
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
-        private const int JoinLockExpirySeconds = 90;
+        private static readonly TimeSpan JoinStateExpiry = TimeSpan.FromMinutes(15);
+        private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromHours(12);
 
         /// <summary>
         /// The Graph logger
@@ -200,13 +201,34 @@ namespace EchoBot.Bot
             }
 
             var threadId = joinParams.ChatInfo.ThreadId!;
-            return await Util.Utilities.ExecuteWithDistributedLockAsync(_mux, CacheConstants.BotJoinLockKey(threadId), TimeSpan.FromSeconds(JoinLockExpirySeconds),
+            return await Util.Utilities.ExecuteWithDistributedLockAsync(_mux, CacheConstants.BotJoinLockKey(threadId), TimeSpan.FromSeconds(90),
                 () => $"Join call is already in progress for thread '{threadId}'.",
                 async () =>
                 {
+                    var db = _mux.GetDatabase();
+
                     if (!this.CallHandlers.TryGetValue(threadId, out CallHandler? call))
                     {
-                        var statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
+                        var existingCallId = await db.StringGetAsync(CacheConstants.CallConnectionStateKey(threadId)).ConfigureAwait(false);
+                        if (existingCallId.HasValue)
+                        {
+                            throw new InvalidOperationException($"Call already exists for thread '{threadId}' ({existingCallId}).");
+                        }
+
+                        await db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), "joining", JoinStateExpiry).ConfigureAwait(false);
+
+                        ICall statefulCall;
+                        try
+                        {
+                            statefulCall = await this.Client.Calls().AddAsync(joinParams, scenarioId).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            await db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId)).ConfigureAwait(false);
+                            throw;
+                        }
+
+                        await db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), statefulCall.Id, CallConnectionExpiry).ConfigureAwait(false);
 
                         _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
                         return statefulCall;
@@ -306,16 +328,20 @@ namespace EchoBot.Bot
         /// <param name="args">The <see cref="CollectionEventArgs{ICall}" /> instance containing the event data.</param>
         private void CallsOnUpdated(ICallCollection sender, CollectionEventArgs<ICall> args)
         {
+            var db = _mux.GetDatabase();
+
             foreach (var call in args.AddedResources)
             {
                 var threadId = call.Resource.ChatInfo.ThreadId!;
                 var callHandler = new CallHandler(call);
                 this.CallHandlers[threadId] = callHandler;
+                _ = db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), call.Id, CallConnectionExpiry);
             }
 
             foreach (var call in args.RemovedResources)
             {
                 var threadId = call.Resource.ChatInfo.ThreadId!;
+                _ = db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId));
                 if (this.CallHandlers.TryRemove(threadId, out CallHandler? handler))
                 {
                     Task.Run(async () => {
