@@ -39,7 +39,7 @@ namespace EchoBot.Bot
         IBotMediaLogger mediaLogger,
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
-        private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromHours(12);
+        private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromMinutes(5);
 
         /// <summary>
         /// The Graph logger
@@ -210,7 +210,7 @@ namespace EchoBot.Bot
                             _mux,
                             CacheConstants.CallConnectionStateKey(threadId),
                             pendingState: "joining",
-                            pendingExpiry: TimeSpan.FromMinutes(15),
+                            pendingExpiry: TimeSpan.FromMinutes(5),
                             completedExpiry: CallConnectionExpiry,
                             onStateAlreadyExists: existingState => throw new InvalidOperationException($"Call already exists for thread '{threadId}' ({existingState})."),
                             action: () => this.Client.Calls().AddAsync(joinParams, scenarioId),
