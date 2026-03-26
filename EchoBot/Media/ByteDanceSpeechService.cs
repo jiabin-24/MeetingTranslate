@@ -464,15 +464,31 @@ namespace EchoBot.Media
         public override async Task ShutDownAsync()
         {
             await base.ShutDownAsync().ConfigureAwait(false);
-            foreach (var session in _speakerSessions.Values)
-            {
-                session.FinishFlag = true;
-                session.KeepAliveCts.Cancel();
-            }
 
-            var finishTasks = _speakerSessions.Values
-                .SelectMany(session => _translateTarget.Keys.Select(lang => FinishSession(session, lang)));
+            var sessions = _speakerSessions.Values.ToArray();
+            _speakerSessions.Clear();
 
+            var shutdownTasks = sessions.Select(ShutDownSessionAsync);
+            await Task.WhenAll(shutdownTasks).ConfigureAwait(false);
+        }
+
+        public override async Task ShutDownSessionAsync(string speakerId)
+        {
+            if (string.IsNullOrWhiteSpace(speakerId))
+                return;
+
+            if (!_speakerSessions.TryRemove(speakerId, out var session))
+                return;
+
+            await ShutDownSessionAsync(session).ConfigureAwait(false);
+        }
+
+        private async Task ShutDownSessionAsync(SpeakerSession session)
+        {
+            session.FinishFlag = true;
+            session.KeepAliveCts.Cancel();
+
+            var finishTasks = _translateTarget.Keys.Select(lang => FinishSession(session, lang));
             await Task.WhenAll(finishTasks).ConfigureAwait(false);
         }
     }

@@ -73,6 +73,11 @@ namespace EchoBot.Media
             IsRunning = false;
         }
 
+        public virtual Task ShutDownSessionAsync(string speakerId)
+        {
+            return Task.CompletedTask;
+        }
+
         public abstract Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId);
 
         public abstract void AddPhrases(IEnumerable<string> phrases);
