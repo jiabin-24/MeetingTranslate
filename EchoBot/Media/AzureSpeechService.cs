@@ -234,8 +234,7 @@ namespace EchoBot.Media
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
 
-                    SetCurrentSpeaker(speakerId, buffer, bufferLength);
-
+                    CurrentSpeakerId = speakerId;
                     sourceLangs.ForEach(lang => _audioInputStreamDic[lang].Write(buffer));
                     //_audioInputStreamDic[AUTO].Write(buffer);
                 }

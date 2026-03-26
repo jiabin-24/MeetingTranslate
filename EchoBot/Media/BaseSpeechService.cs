@@ -25,9 +25,6 @@ namespace EchoBot.Media
 
         protected readonly TranslatorOptions TranslatorOptions;
 
-        // Energy threshold (RMS) above which we consider this buffer as active speech for assigning speaker id
-        protected const double SpeakerEnergyThreshold = 750.0;
-
         private int _placeHolderIndex;
 
         protected string CurrentSpeakerId = string.Empty;
@@ -41,7 +38,7 @@ namespace EchoBot.Media
 
         private readonly CallHandler _callHandler;
 
-        private Dictionary<string, Models.Participant> AudioToIdentityMap => _callHandler.Call.Participants.ToDictionary(p => p.Id, IdentityToParticipant);
+        private Dictionary<string, Models.Participant> AudioToIdentityMap => _callHandler.Call.Participants.ToDictionary(CallHandler.GetIdentityId, IdentityToParticipant);
 
         protected ILogger Logger;
 
@@ -160,13 +157,10 @@ namespace EchoBot.Media
         {
             if (!AudioToIdentityMap.TryGetValue(speakerId, out var speaker))
             {
-                // 若找不到对应的 speakerId，尝试从缓存获取，此时是 audioId（可能存在音频流与身份信息不同步的情况）
-                var speakerName = await _cacheHelper.GetWithMemoryCacheAsync<string>(CacheConstants.MsAudioParticipantsKey(ThreadId, audioId: speakerId), TimeSpan.FromSeconds(10));
-
                 speaker = new Models.Participant
                 {
                     Id = speakerId,
-                    DisplayName = !string.IsNullOrEmpty(speakerName) ? speakerName : $"Speaker-{speakerId}"
+                    DisplayName = $"Speaker-{speakerId}"
                 };
             }
 
@@ -210,51 +204,6 @@ namespace EchoBot.Media
                 return;
 
             await acsMediaWebSocket.PushTtsFrameAsync(pcm, CancellationToken.None);
-        }
-
-        // Compute RMS energy from a 16-bit PCM buffer
-        private static double ComputeRmsFrom16BitPcm(byte[] buffer, long bufferLength)
-        {
-            if (buffer == null || bufferLength <= 1) return 0.0;
-
-            long sampleCount = bufferLength / 2; // 16-bit samples
-            if (sampleCount == 0) return 0.0;
-
-            double sumSquares = 0.0;
-
-            for (long i = 0; i < sampleCount; i++)
-            {
-                int offset = (int)(i * 2);
-                short sample = (short)(buffer[offset] | (buffer[offset + 1] << 8));
-                double normalized = sample; // keep in int16 domain to compute RMS
-                sumSquares += normalized * normalized;
-            }
-
-            double meanSquares = sumSquares / sampleCount;
-            double rms = Math.Sqrt(meanSquares);
-            return rms;
-        }
-
-        protected bool SetCurrentSpeaker(string speakerId, byte[]? buffer, long bufferLength)
-        {
-            if (speakerId != null)
-            {
-                // Compute buffer energy (RMS) for 16-bit PCM and only assign speaker when above threshold
-                try
-                {
-                    var rms = ComputeRmsFrom16BitPcm(buffer, bufferLength);
-                    if (rms >= SpeakerEnergyThreshold)
-                        CurrentSpeakerId = speakerId;
-
-                    return rms >= SpeakerEnergyThreshold;
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogDebug(ex, "Failed to compute audio energy, assigning speaker id by default");
-                    CurrentSpeakerId = speakerId;
-                }
-            }
-            return false;
         }
 
         protected Dictionary<string, string> BuildTextDictionary(IReadOnlyDictionary<string, string> captions, string sourceLang, string sourceText)

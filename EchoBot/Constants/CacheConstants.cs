@@ -14,9 +14,6 @@
 
         public static string AcsRoomParticipantKey(string threadId) => $"{threadId}:RoomParticipantId";
 
-        public static string MsAudioParticipantsKey(string threadId, string? audioId) => string.IsNullOrEmpty(audioId) ? $"{threadId}:AudioParticipants"
-            : $"{threadId}:AudioParticipants:{audioId}";
-
         public static string MeetingCaptionKey(string threadId) => $"{threadId}:MeetingCaption";
     }
 }

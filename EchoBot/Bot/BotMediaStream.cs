@@ -125,7 +125,6 @@ namespace EchoBot.Bot
 
             await LanguageService.ShutDownAsync().ConfigureAwait(false);
             await _cacheHelper.Mux.GetDatabase().KeyDeleteAsync(CacheConstants.MeetingCaptionKey(_threadId));
-            await _cacheHelper.DeleteChildrenAsync(CacheConstants.MsAudioParticipantsKey(_threadId, null));
         }
 
         /// <summary>
@@ -231,7 +230,7 @@ namespace EchoBot.Bot
             var participant = _callHandler.Call.Participants
                 .FirstOrDefault(x => x.Resource.MediaStreams.Any(y => y.SourceId == audioSourceId));
 
-            return string.IsNullOrWhiteSpace(participant?.Id) ? audioSourceId : participant.Id;
+            return participant != null ? CallHandler.GetIdentityId(participant) : audioSourceId;
         }
 
         private void OnSendMediaBuffer(object? sender, Media.MediaStreamEventArgs e)

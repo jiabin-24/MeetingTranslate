@@ -1,5 +1,4 @@
-﻿using EchoBot.Constants;
-using EchoBot.Util;
+﻿using EchoBot.Util;
 using Microsoft.Graph.Communications.Calls;
 using Microsoft.Graph.Communications.Common.Telemetry;
 using Microsoft.Graph.Communications.Resources;
@@ -29,7 +28,6 @@ namespace EchoBot.Bot
         /// <value>The bot media stream.</value>
         public BotMediaStream BotMediaStream { get; private set; }
 
-        private readonly CacheHelper _cacheHelper;
         private readonly CollectionEventHandler<IParticipantCollection, IParticipant> _participantsUpdatedHandler;
         private readonly ResourceEventHandler<IParticipant, Participant> _participantUpdatedHandler;
 
@@ -48,7 +46,6 @@ namespace EchoBot.Bot
             this.Call.OnUpdated += this.CallOnUpdated;
             this.Call.Participants.OnUpdated += this._participantsUpdatedHandler;
 
-            this._cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
             this._threadId = statefulCall.Resource.ChatInfo.ThreadId!;
             this.BotMediaStream = new BotMediaStream(this, _threadId, this.GraphLogger);
         }
@@ -129,7 +126,7 @@ namespace EchoBot.Bot
                 if (!string.IsNullOrEmpty(participantDisplayName))
                     this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
 
-                await SubscribeToParticipantAudio(participant, forceSubscribe: false);
+                await SubscribeToParticipantAudio(participant);
             }
             else
             {
@@ -189,32 +186,19 @@ namespace EchoBot.Bot
 
         private async Task OnParticipantUpdated(IParticipant sender, ResourceEventArgs<Participant> args)
         {
-            await SubscribeToParticipantAudio(sender, forceSubscribe: false);
+            await SubscribeToParticipantAudio(sender);
         }
 
-        private async Task SubscribeToParticipantAudio(IParticipant participant, bool forceSubscribe = true)
+        private async Task SubscribeToParticipantAudio(IParticipant participant)
         {
-            var identity = TryGetParticipantIdentity(participant);
-            var audioSourceId = GetAudioSourceId(participant);
-
-            if (!string.IsNullOrEmpty(audioSourceId))
-            {
-                GraphLogger.Info($"Participant {participant.Id} audio source ready: {audioSourceId}");
-
-                await _cacheHelper.SetAsync(CacheConstants.MsAudioParticipantsKey(_threadId, audioSourceId), TimeSpan.FromMinutes(30), identity?.DisplayName);
-            }
-            else if (forceSubscribe)
-            {
-                GraphLogger.Warn($"Participant {participant.Id} has no audio source yet.");
-            }
+            GraphLogger.Info($"Participant {participant.Id} audio source ready: {GetAudioSourceId(participant)}");
 
             await Task.CompletedTask;
         }
 
-        public static string GetAudioSourceId(IParticipant participant)
-        {
-            return participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
-        }
+        public static string GetAudioSourceId(IParticipant participant) => participant.Resource.MediaStreams?.FirstOrDefault(m => m.MediaType == Modality.Audio)?.SourceId;
+
+        public static string GetIdentityId(IParticipant participant) => TryGetParticipantIdentity(participant)?.Id ?? participant.Id;
 
         public static Identity TryGetParticipantIdentity(IParticipant participant)
         {
@@ -234,6 +218,7 @@ namespace EchoBot.Bot
         private async Task UnsubscribeFromParticipantAudio(IParticipant participant)
         {
             GraphLogger.Info($"Participant {participant.Id} audio unsubscribed.");
+
             await Task.CompletedTask;
         }
 
