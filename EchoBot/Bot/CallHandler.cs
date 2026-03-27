@@ -134,7 +134,7 @@ namespace EchoBot.Bot
                 participant.OnUpdated -= this._participantUpdatedHandler;
 
                 await UnsubscribeFromParticipantAudio(participant);
-                await this.BotMediaStream.LanguageService.ShutDownSessionAsync(GetIdentityId(participant));
+                _ = this.BotMediaStream.LanguageService.ShutDownSessionAsync(GetIdentityId(participant));
             }
             return CreateParticipantUpdateJson(participant.Id, participantDisplayName);
         }

@@ -12,7 +12,8 @@
     "react-router-dom": "6.2.2",
     "react-scripts": "5.0.0",
     "@azure/communication-calling": "^1.16.3",
-    "@azure/communication-common": "^2.2.1"
+    "@azure/communication-common": "^2.2.1",
+    "@microsoft/applicationinsights-web": "^3.3.2"
   },
   "devDependencies": {
     "@fluidframework/test-client-utils": "~0.59.0",
