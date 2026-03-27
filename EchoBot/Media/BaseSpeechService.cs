@@ -25,6 +25,8 @@ namespace EchoBot.Media
 
         protected readonly TranslatorOptions TranslatorOptions;
 
+        private readonly IConfiguration _config;
+
         private int _placeHolderIndex;
 
         protected string CurrentSpeakerId = string.Empty;
@@ -58,6 +60,7 @@ namespace EchoBot.Media
             Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
 
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
+            _config = ServiceLocator.GetRequiredService<IConfiguration>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
             _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
@@ -194,6 +197,9 @@ namespace EchoBot.Media
 
         protected async Task TextToSpeech(byte[] pcm, string lang, string sourceLang, string speakerId)
         {
+            if (string.IsNullOrEmpty(_config["ACSConnectionString"]))
+                return;
+
             if (!sourceLang.Equals(lang) && !sourceLang.Equals(AUTO))
                 return;
 
