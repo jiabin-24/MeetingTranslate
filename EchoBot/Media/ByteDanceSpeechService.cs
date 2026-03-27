@@ -7,6 +7,7 @@ using EchoBot.Models.Configuration;
 using EchoBot.Util;
 using Google.Protobuf;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph.Communications.Common;
 using Microsoft.Skype.Bots.Media;
 using NAudio.Wave;
 using System.Collections.Concurrent;
@@ -31,6 +32,7 @@ namespace EchoBot.Media
         private static readonly TimeSpan SilenceStartAfterNoAudio = TimeSpan.FromMilliseconds(120);
 
         private const string UID = "ast_csharp_client";
+        private HashSet<string> _hotWords = [];
 
         protected override string AUTO => "zhen";
 
@@ -90,7 +92,7 @@ namespace EchoBot.Media
                 {
                     var buffer = new byte[bufferLength];
                     Marshal.Copy(audioBuffer.Data, buffer, 0, (int)bufferLength);
-                    var converted = Utilities.ConvertToPcm16Mono16k(buffer, (int)bufferLength, new WaveFormat(16000, 16, 1), ref session.ConvertLeftoverCount, session.ConvertLeftoverBuffer);
+                    var converted = Util.Utilities.ConvertToPcm16Mono16k(buffer, (int)bufferLength, new WaveFormat(16000, 16, 1), ref session.ConvertLeftoverCount, session.ConvertLeftoverBuffer);
                     if (converted.Length == 0)
                         return;
 
@@ -161,6 +163,28 @@ namespace EchoBot.Media
             };
             await session.WsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
             Logger.LogInformation("StartSession sent");
+        }
+
+        private async Task UpdateSession(SpeakerSession session, string sourceLang)
+        {
+            if (!session.WsClients.TryGetValue(sourceLang, out var wsClient) || !session.SessionIds.TryGetValue(sourceLang, out var sessionId))
+                return;
+
+            if (!session.SessionEnded.Task.IsCompleted && wsClient.State == WebSocketState.Open)
+            {
+                var req = new Data.Speech.Ast.ReqParams();
+                req.Corpus.HotWordsList.Clear();
+                req.Corpus.HotWordsList.AddRange(_hotWords.Where(w => !string.IsNullOrWhiteSpace(w)));
+
+                var updateReq = new TranslateRequest
+                {
+                    RequestMeta = new RequestMeta { SessionID = sessionId },
+                    Event = EV.Type.UpdateConfig,
+                    Request = req
+                };
+                await wsClient.SendAsync(new ArraySegment<byte>(updateReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
+                Logger.LogInformation("UpdateConfig sent with {HotWordCount} hot words", req.Corpus.HotWordsList.Count);
+            }
         }
 
         private async Task FinishSession(SpeakerSession session, string sourceLang)
@@ -454,11 +478,8 @@ namespace EchoBot.Media
 
         public override void AddPhrases(IEnumerable<string> phrases)
         {
-            foreach (var p in phrases)
-            {
-                if (!string.IsNullOrWhiteSpace(p))
-                    Logger.LogInformation(p);
-            }
+            _hotWords.AddRange(phrases);
+            _ = _speakerSessions.Values.SelectMany(s => _translateTarget.Keys.Select(l => UpdateSession(s, l)));
         }
 
         public override async Task ShutDownAsync()

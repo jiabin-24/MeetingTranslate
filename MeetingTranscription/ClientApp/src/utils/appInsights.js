@@ -1,6 +1,7 @@
 import { ApplicationInsights } from '@microsoft/applicationinsights-web';
+import { APPINSIGHTS_CONNECTION_STRING } from '../config/apiBase';
 
-const connectionString = process.env.REACT_APP_APPINSIGHTS_CONNECTION_STRING || '';
+const connectionString = APPINSIGHTS_CONNECTION_STRING;
 let appInsights = null;
 
 export function initAppInsights() {
