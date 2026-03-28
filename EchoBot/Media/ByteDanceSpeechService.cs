@@ -149,7 +149,6 @@ namespace EchoBot.Media
 
         private async Task StartSession(SpeakerSession session, string sessionId, string sourceLang)
         {
-            // Send StartSession
             var startReq = new TranslateRequest
             {
                 RequestMeta = new RequestMeta { SessionID = sessionId },
@@ -162,6 +161,8 @@ namespace EchoBot.Media
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = sourceLang.Equals(AUTO) ? AUTO : _translateTarget[sourceLang] }
             };
             await session.WsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
+            await CacheHelper.SetAsync(CacheConstants.CallParticipantsKey(ThreadId, GetParticipant(session.SpeakerId).DisplayName), TimeSpan.FromMinutes(30), "exist").ConfigureAwait(false);
+
             Logger.LogInformation("StartSession sent");
         }
 
@@ -172,7 +173,7 @@ namespace EchoBot.Media
 
             if (!session.SessionEnded.Task.IsCompleted && wsClient.State == WebSocketState.Open)
             {
-                var req = new Data.Speech.Ast.ReqParams();
+                var req = new Data.Speech.Ast.ReqParams { Corpus = new Corpus() };
                 req.Corpus.HotWordsList.Clear();
                 req.Corpus.HotWordsList.AddRange(_hotWords.Where(w => !string.IsNullOrWhiteSpace(w)));
 
@@ -200,6 +201,7 @@ namespace EchoBot.Media
                     Event = EV.Type.FinishSession
                 };
                 await wsClient.SendAsync(new ArraySegment<byte>(finishReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
+                await CacheHelper.DeleteAsync(CacheConstants.CallParticipantsKey(ThreadId, GetParticipant(session.SpeakerId).DisplayName)).ConfigureAwait(false);
 
                 session.SessionEnded.TrySetResult(true);
                 Logger.LogInformation("FinishSession sent for speaker {speakerId}", session.SpeakerId);
@@ -455,7 +457,7 @@ namespace EchoBot.Media
             await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
-        private byte[] GetBatchBuffer(SpeakerSession session, byte[]? buffer, int bufferLength)
+        private static byte[] GetBatchBuffer(SpeakerSession session, byte[]? buffer, int bufferLength)
         {
             // Append incoming 640-byte buffer and send only when we have exactly one full ChunkSize (5 * 640).
             byte[] chunkToSend = null;
@@ -476,10 +478,11 @@ namespace EchoBot.Media
             return chunkToSend;
         }
 
-        public override void AddPhrases(IEnumerable<string> phrases)
+        public override async Task AddPhrases(IEnumerable<string> phrases)
         {
             _hotWords.AddRange(phrases);
-            _ = _speakerSessions.Values.SelectMany(s => _translateTarget.Keys.Select(l => UpdateSession(s, l)));
+            var tasks = _speakerSessions.Values.SelectMany(s => _translateTarget.Keys.Select(l => UpdateSession(s, l)));
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         public override async Task ShutDownAsync()

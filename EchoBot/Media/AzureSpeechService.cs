@@ -183,12 +183,11 @@ namespace EchoBot.Media
         }
 
         // 添加自定义短语以提升识别准确率
-        public override void AddPhrases(IEnumerable<string> phrases)
+        public override async Task AddPhrases(IEnumerable<string> phrases)
         {
-            foreach (var p in phrases)
+            foreach (var p in phrases.Where(p => !string.IsNullOrWhiteSpace(p)))
             {
-                if (!string.IsNullOrWhiteSpace(p))
-                    _phraseList.AddPhrase(p);
+                _phraseList.AddPhrase(p);
             }
         }
 

@@ -50,20 +50,20 @@ namespace EchoBot.Media
 
         private readonly IConnectionMultiplexer _mux;
 
-        private readonly CacheHelper _cacheHelper;
+        protected readonly CacheHelper CacheHelper;
 
         public BaseSpeechService(string threadId, CallHandler callHandler)
         {
             ThreadId = threadId;
-            _callHandler = callHandler;
             TranslatorOptions = ServiceLocator.GetRequiredService<IOptions<TranslatorOptions>>().Value;
             Logger = ServiceLocator.GetRequiredService<ILoggerFactory>().CreateLogger(GetType().FullName ?? GetType().Name);
+            CacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
 
+            _callHandler = callHandler;
             _translatorClient = ServiceLocator.GetRequiredService<ITranslatorClient>();
             _config = ServiceLocator.GetRequiredService<IConfiguration>();
             _captionHub = ServiceLocator.GetRequiredService<IHubContext<CaptionSignalRHub>>();
             _mux = ServiceLocator.GetRequiredService<IConnectionMultiplexer>();
-            _cacheHelper = ServiceLocator.GetRequiredService<CacheHelper>();
         }
 
         public virtual async Task ShutDownAsync()
@@ -83,7 +83,7 @@ namespace EchoBot.Media
 
         public abstract Task AppendAudioBuffer(AudioMediaBuffer audioBuffer, string speakerId);
 
-        public abstract void AddPhrases(IEnumerable<string> phrases);
+        public abstract Task AddPhrases(IEnumerable<string> phrases);
 
         public event EventHandler<MediaStreamEventArgs> SendMediaBuffer;
 
@@ -126,7 +126,7 @@ namespace EchoBot.Media
             sourceLang = AppConstants.LangMap.TryGetValue(sourceLang, out string? value) ? value : sourceLang.Split('-')[0];
 
             // Determine speaker based on the active speakers snapshot (updated when buffer energy exceeded threshold)
-            var speaker = await GetParticipant(speakerId);
+            var speaker = GetParticipant(speakerId);
             var payload = new CaptionPayload(
                 Type: "caption",
                 MeetingId: ThreadId,
@@ -161,7 +161,7 @@ namespace EchoBot.Media
             }
         }
 
-        private async Task<Models.Participant> GetParticipant(string speakerId)
+        protected Models.Participant GetParticipant(string speakerId)
         {
             if (!AudioToIdentityMap.TryGetValue(speakerId, out var speaker))
             {

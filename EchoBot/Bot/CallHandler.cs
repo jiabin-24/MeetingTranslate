@@ -124,7 +124,7 @@ namespace EchoBot.Bot
                 participant.OnUpdated += this._participantUpdatedHandler;
 
                 if (!string.IsNullOrEmpty(participantDisplayName))
-                    this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
+                    _ = this.BotMediaStream.LanguageService.AddPhrases([participantDisplayName]);
 
                 await SubscribeToParticipantAudio(participant);
             }
