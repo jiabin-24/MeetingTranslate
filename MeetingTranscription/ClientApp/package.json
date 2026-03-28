@@ -41,9 +41,9 @@
   },
   "scripts": {
     "clean": "npx shx rm -rf build",
-    "start": "cross-env HOST=0.0.0.0 HTTPS=true craco start",
+    "start": "cross-env HOST=0.0.0.0 HTTPS=true react-scripts start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "react-scripts test"
   },
   "browserslist": {
     "production": [
