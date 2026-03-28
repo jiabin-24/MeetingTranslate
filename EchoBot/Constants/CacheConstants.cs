@@ -6,7 +6,7 @@
 
         public static string CallConnectionStateKey(string threadId) => $"{threadId}:CallConnectionState";
 
-        public static string CallParticipantsKey(string threadId, string name) => $"{threadId}:CallParticipants:{name}";
+        public static string CallParticipantsKey(string threadId, string? name) => string.IsNullOrEmpty(name) ? $"{threadId}:CallParticipants" : $"{threadId}:CallParticipants:{name}";
 
         public static string AcsConnectLockKey(string threadId) => $"{threadId}:CallConnectionLock";
 

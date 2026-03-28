@@ -494,6 +494,7 @@ namespace EchoBot.Media
 
             var shutdownTasks = sessions.Select(ShutDownSessionAsync);
             await Task.WhenAll(shutdownTasks).ConfigureAwait(false);
+            await CacheHelper.DeleteAsync(CacheConstants.CallParticipantsKey(ThreadId, null)).ConfigureAwait(false);
         }
 
         public override async Task ShutDownSessionAsync(string speakerId)
