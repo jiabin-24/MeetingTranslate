@@ -1,31 +1,35 @@
 import * as React from "react";
-import * as microsoftTeams from "@microsoft/teams-js";
 import {
     BrowserRouter,
     Route,
     Routes
 } from 'react-router-dom';
-import AppInMeeting from "../components/app-in-meeting";
-import Configure from "../components/configure";
+const AppInMeeting = React.lazy(() => import("../components/app-in-meeting"));
+const Configure = React.lazy(() => import("../components/configure"));
 
 export const AppRoute = () => {
     React.useEffect(() => {
-        microsoftTeams.app
-            .initialize()
-            .then(() => {
+        (async () => {
+            try {
+                const microsoftTeams = await import('@microsoft/teams-js');
+                await microsoftTeams.app.initialize();
                 console.log("App.js: initializing client SDK initialized");
                 microsoftTeams.app.notifyAppLoaded();
                 microsoftTeams.app.notifySuccess();
-            })
-            .catch((error) => console.error(error));
+            } catch (error) {
+                console.error('Failed to initialize Teams SDK', error);
+            }
+        })();
     }, []);
 
     return (
         <BrowserRouter>
-            <Routes>
-                <Route path="/configure" element={<Configure />} />
-                <Route path="/appInMeeting" element={<AppInMeeting />} />
-            </Routes>
+            <React.Suspense fallback={<div style={{padding:20}}>Loading…</div>}>
+                <Routes>
+                    <Route path="/configure" element={<Configure />} />
+                    <Route path="/appInMeeting" element={<AppInMeeting />} />
+                </Routes>
+            </React.Suspense>
         </BrowserRouter>
     );
 };

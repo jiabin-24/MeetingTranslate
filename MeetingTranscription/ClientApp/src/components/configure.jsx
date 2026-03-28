@@ -1,28 +1,33 @@
 import React, { useEffect } from "react";
-import * as microsoftTeams from "@microsoft/teams-js";
 import { API_BASE } from '../config/apiBase';
 
 // Handles redirection after successful/failure sign in attempt.
 const Configure = props => {
     useEffect(() => {
-        microsoftTeams.app.initialize().then(() => {
-            microsoftTeams.app.notifySuccess();
-            microsoftTeams.pages.config.registerOnSaveHandler(async function (saveEvent) {
-                microsoftTeams.pages.config.setConfig({
-                    entityID: "Meeting Transcript Bot",
-                    contentUrl: `${window.location.origin}/appInMeeting`,
-                    suggestedTabName: "App in meeting",
-                    websiteUrl: `${window.location.origin}/appInMeeting`,
+        (async () => {
+            try {
+                const microsoftTeams = await import('@microsoft/teams-js');
+                await microsoftTeams.app.initialize();
+                microsoftTeams.app.notifySuccess();
+                microsoftTeams.pages.config.registerOnSaveHandler(async function (saveEvent) {
+                    microsoftTeams.pages.config.setConfig({
+                        entityID: "Meeting Transcript Bot",
+                        contentUrl: `${window.location.origin}/appInMeeting`,
+                        suggestedTabName: "App in meeting",
+                        websiteUrl: `${window.location.origin}/appInMeeting`,
+                    });
+                    saveEvent.notifySuccess();
+                    // Get context and call backend to join call
+                    const context = await microsoftTeams.app.getContext();
+                    // Call helper to notify backend to join call
+                    joinCallAsync(context);
                 });
-                saveEvent.notifySuccess();
-                // Get context and call backend to join call
-                const context = await microsoftTeams.app.getContext();
-                // Call helper to notify backend to join call
-                joinCallAsync(context);
-            });
 
-            microsoftTeams.pages.config.setValidityState(true);
-        });
+                microsoftTeams.pages.config.setValidityState(true);
+            } catch (e) {
+                console.warn('Failed to initialize Teams SDK in Configure', e);
+            }
+        })();
     }, []);
 
     const joinCallAsync = async (context) => {

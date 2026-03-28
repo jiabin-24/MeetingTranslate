@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { API_BASE, USE_BYTE_DANCE } from '../config/apiBase';
-import * as microsoftTeams from "@microsoft/teams-js";
 import CaptionsPanel from "./captionsPanel";
 
 // Handles redirection after successful/failure sign in attempt.
@@ -10,14 +9,19 @@ const AppInMeeting = props => {
     const useByteDance = USE_BYTE_DANCE;
     
     useEffect(() => {
-        microsoftTeams.app.initialize().then(() => {
-            microsoftTeams.app.getContext().then((context) => {
+        (async () => {
+            try {
+                const microsoftTeams = await import('@microsoft/teams-js');
+                await microsoftTeams.app.initialize();
+                const context = await microsoftTeams.app.getContext();
                 if (context && context.chat && context.chat.id) {
                     setMeetingId(context.chat.id);
                     setCurrentUser(context.user);
                 }
-            });
-        });
+            } catch (e) {
+                console.warn('Failed to get Teams context', e);
+            }
+        })();
     }, []);
 
     const [sourceLang, setSourceLang] = useState(() => {

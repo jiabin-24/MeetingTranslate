@@ -12,6 +12,14 @@
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Minimal static loader so browser shows meaningful UI before JS bundles execute -->
+      <div id="initial-loader" style="font-family: Arial, Helvetica, sans-serif; display:flex; align-items:center; justify-content:center; height:100vh;">
+        <div style="text-align:center; color:#666;">
+          <h2 style="margin:0 0 8px 0; color:#1F5FBF">Meeting Transcript</h2>
+          <div>Loading…</div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
