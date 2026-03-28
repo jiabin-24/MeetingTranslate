@@ -98,13 +98,22 @@ namespace EchoBot.Util
             Func<T, RedisValue> completedStateSelector)
         {
             var db = mux.GetDatabase();
-            var existingState = await db.StringGetAsync(stateKey).ConfigureAwait(false);
-            if (existingState.HasValue)
+            var pendingStateSet = await db.StringSetAsync(
+                stateKey,
+                pendingState,
+                pendingExpiry,
+                when: When.NotExists).ConfigureAwait(false);
+
+            if (!pendingStateSet)
             {
+                var existingState = await db.StringGetAsync(stateKey).ConfigureAwait(false);
+                if (!existingState.HasValue)
+                {
+                    existingState = pendingState;
+                }
+
                 return await onStateAlreadyExists(existingState).ConfigureAwait(false);
             }
-
-            await db.StringSetAsync(stateKey, pendingState, pendingExpiry).ConfigureAwait(false);
 
             T result;
             try
