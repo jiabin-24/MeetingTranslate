@@ -161,7 +161,7 @@ namespace EchoBot.Media
                 Request = new Data.Speech.Ast.ReqParams { Mode = "s2s", SourceLanguage = sourceLang.Split('-')[0], TargetLanguage = sourceLang.Equals(AUTO) ? AUTO : _translateTarget[sourceLang] }
             };
             await session.WsClients[sourceLang].SendAsync(new ArraySegment<byte>(startReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
-            await CacheHelper.SetAsync(CacheConstants.CallParticipantsKey(ThreadId, GetParticipant(session.SpeakerId).DisplayName), TimeSpan.FromMinutes(30), "exist").ConfigureAwait(false);
+            await CacheHelper.SetAsync(CacheConstants.CallParticipantsKey(ThreadId, session.SpeakerId), TimeSpan.FromMinutes(30), GetParticipant(session.SpeakerId).DisplayName).ConfigureAwait(false);
 
             Logger.LogInformation("StartSession sent");
         }
@@ -201,7 +201,7 @@ namespace EchoBot.Media
                     Event = EV.Type.FinishSession
                 };
                 await wsClient.SendAsync(new ArraySegment<byte>(finishReq.ToByteArray()), WebSocketMessageType.Binary, true, new CancellationTokenSource(DefaultTimeout).Token);
-                await CacheHelper.DeleteAsync(CacheConstants.CallParticipantsKey(ThreadId, GetParticipant(session.SpeakerId).DisplayName)).ConfigureAwait(false);
+                await CacheHelper.DeleteAsync(CacheConstants.CallParticipantsKey(ThreadId, session.SpeakerId)).ConfigureAwait(false);
 
                 session.SessionEnded.TrySetResult(true);
                 Logger.LogInformation("FinishSession sent for speaker {speakerId}", session.SpeakerId);
@@ -494,7 +494,7 @@ namespace EchoBot.Media
 
             var shutdownTasks = sessions.Select(ShutDownSessionAsync);
             await Task.WhenAll(shutdownTasks).ConfigureAwait(false);
-            await CacheHelper.DeleteAsync(CacheConstants.CallParticipantsKey(ThreadId, null)).ConfigureAwait(false);
+            await CacheHelper.DeleteChildrenAsync(CacheConstants.CallParticipantsKey(ThreadId, null)).ConfigureAwait(false);
         }
 
         public override async Task ShutDownSessionAsync(string speakerId)
