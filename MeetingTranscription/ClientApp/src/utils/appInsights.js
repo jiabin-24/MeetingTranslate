@@ -1,14 +1,11 @@
-import { ApplicationInsights } from '@microsoft/applicationinsights-web';
 import { APPINSIGHTS_CONNECTION_STRING } from '../config/apiBase';
 
 const connectionString = APPINSIGHTS_CONNECTION_STRING;
 let appInsights = null;
 
-export function initAppInsights() {
+export async function initAppInsights() {
     if (!connectionString) {
         // No connection string configured; skip initialization in local/dev.
-        // This allows builds to succeed without a secret in env.
-        // Use `REACT_APP_APPINSIGHTS_CONNECTION_STRING` at build time to enable.
         // eslint-disable-next-line no-console
         console.warn('Application Insights connection string not provided. Skipping init.');
         return null;
@@ -16,14 +13,24 @@ export function initAppInsights() {
 
     if (appInsights) return appInsights;
 
-    appInsights = new ApplicationInsights({
-        config: {
-            connectionString,
-            enableAutoRouteTracking: true,
-        },
-    });
-    appInsights.loadAppInsights();
-    return appInsights;
+    // Lazy-load the SDK so it doesn't land in the initial vendor bundle.
+    try {
+        const module = await import('@microsoft/applicationinsights-web');
+        const { ApplicationInsights } = module;
+        appInsights = new ApplicationInsights({
+            config: {
+                connectionString,
+                enableAutoRouteTracking: true,
+            },
+        });
+        appInsights.loadAppInsights();
+        return appInsights;
+    } catch (e) {
+        // If the dynamic import fails, don't break the app.
+        // eslint-disable-next-line no-console
+        console.warn('Failed to load Application Insights SDK', e);
+        return null;
+    }
 }
 
 export function trackPageView(name) {
