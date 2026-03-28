@@ -1,7 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRealtimeCaptions } from '../utils/useRealtimeCaptions.signalr';
-const { CallClient } = require('@azure/communication-calling');
-const { AzureCommunicationTokenCredential } = require('@azure/communication-common');
 import { API_BASE } from '../config/apiBase';
 
 export default function CaptionsPanel(props) {
@@ -68,6 +66,12 @@ export default function CaptionsPanel(props) {
         const t = await r.json();
 
         roomId = t.roomId;
+        // Lazy-load heavy ACS SDKs only when user enables audio to keep bundle small
+        const [{ CallClient }, { AzureCommunicationTokenCredential }] = await Promise.all([
+            import('@azure/communication-calling'),
+            import('@azure/communication-common')
+        ]);
+
         const tokenCredential = new AzureCommunicationTokenCredential(t.participants[0].userToken);
         const callClient = new CallClient();
         callAgent = await callClient.createCallAgent(tokenCredential);

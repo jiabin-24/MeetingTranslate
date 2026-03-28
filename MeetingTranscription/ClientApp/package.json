@@ -5,17 +5,18 @@
   "author": "Microsoft",
   "license": "MIT",
   "dependencies": {
+    "@azure/communication-calling": "^1.16.3",
+    "@azure/communication-common": "^2.2.1",
+    "@microsoft/applicationinsights-web": "^3.3.2",
     "@microsoft/signalr": "^10.0.0",
     "@microsoft/teams-js": "^2.35.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "6.2.2",
-    "react-scripts": "5.0.0",
-    "@azure/communication-calling": "^1.16.3",
-    "@azure/communication-common": "^2.2.1",
-    "@microsoft/applicationinsights-web": "^3.3.2"
+    "react-scripts": "5.0.0"
   },
   "devDependencies": {
+    "@craco/craco": "^7.1.0",
     "@fluidframework/test-client-utils": "~0.59.0",
     "@testing-library/jest-dom": "^5.16.2",
     "@testing-library/react": "^13.3.0",
@@ -27,16 +28,22 @@
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-prettier": "^3.4.1",
     "prettier": "^2.5.0",
+    "source-map-explorer": "^2.5.3",
     "start-server-and-test": "^1.11.6"
+  },
+  "devDependenciesMeta": {
+    "@craco/craco": {
+      "optional": true
+    }
   },
   "browser": {
     "url": false
   },
   "scripts": {
     "clean": "npx shx rm -rf build",
-    "start": "cross-env HOST=0.0.0.0 HTTPS=true react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test"
+    "start": "cross-env HOST=0.0.0.0 HTTPS=true craco start",
+    "build": "craco build",
+    "test": "craco test"
   },
   "browserslist": {
     "production": [
