@@ -14,6 +14,7 @@ namespace EchoBot.Util
     internal static class Utilities
     {
         private const string ReleaseLockScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+        private const string SetValueIfOwnedScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('set', KEYS[1], ARGV[2], 'PX', ARGV[3]) else return nil end";
 
         public static Task<T> ExecuteWithDistributedLockAsync<T>(
             IConnectionMultiplexer mux,
@@ -98,20 +99,17 @@ namespace EchoBot.Util
             Func<T, RedisValue> completedStateSelector)
         {
             var db = mux.GetDatabase();
+            var ownerToken = Guid.NewGuid().ToString("N");
+            var ownedPendingState = $"{pendingState}|owner:{ownerToken}";
             var pendingStateSet = await db.StringSetAsync(
                 stateKey,
-                pendingState,
+                ownedPendingState,
                 pendingExpiry,
                 when: When.NotExists).ConfigureAwait(false);
 
             if (!pendingStateSet)
             {
                 var existingState = await db.StringGetAsync(stateKey).ConfigureAwait(false);
-                if (!existingState.HasValue)
-                {
-                    existingState = pendingState;
-                }
-
                 return await onStateAlreadyExists(existingState).ConfigureAwait(false);
             }
 
@@ -122,11 +120,28 @@ namespace EchoBot.Util
             }
             catch
             {
-                await db.KeyDeleteAsync(stateKey).ConfigureAwait(false);
+                await db.ScriptEvaluateAsync(
+                    ReleaseLockScript,
+                    new RedisKey[] { stateKey },
+                    new RedisValue[] { ownedPendingState }).ConfigureAwait(false);
                 throw;
             }
 
-            await db.StringSetAsync(stateKey, completedStateSelector(result), completedExpiry).ConfigureAwait(false);
+            var setCompletedResult = await db.ScriptEvaluateAsync(
+                SetValueIfOwnedScript,
+                new RedisKey[] { stateKey },
+                new RedisValue[]
+                {
+                    ownedPendingState,
+                    completedStateSelector(result),
+                    (long)completedExpiry.TotalMilliseconds
+                }).ConfigureAwait(false);
+
+            if (setCompletedResult.IsNull)
+            {
+                throw new InvalidOperationException($"State ownership lost for key '{stateKey}'.");
+            }
+
             return result;
         }
 

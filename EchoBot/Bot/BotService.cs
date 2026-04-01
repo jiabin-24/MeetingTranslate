@@ -200,7 +200,7 @@ namespace EchoBot.Bot
             }
 
             var threadId = joinParams.ChatInfo.ThreadId!;
-            return await Util.Utilities.ExecuteWithDistributedLockAsync(_mux, CacheConstants.BotJoinLockKey(threadId), TimeSpan.FromMinutes(2),
+            return await Util.Utilities.ExecuteWithDistributedLockAsync(_mux, CacheConstants.BotJoinLockKey(threadId), TimeSpan.FromMinutes(5),
                 () => $"Join call is already in progress for thread '{threadId}'.",
                 async () =>
                 {
