@@ -24,6 +24,8 @@ namespace EchoBot
             app.Services.AddSingleton<IBotMediaLogger, BotMediaLogger>();
 
             app.Services.AddSingleton<IBotService, BotService>();
+            app.Services.AddSingleton<ICallNotificationQueue, CallNotificationQueueService>();
+            app.Services.AddHostedService(sp => (CallNotificationQueueService)sp.GetRequiredService<ICallNotificationQueue>());
             app.Services.AddHttpClient<ITranslatorClient, AzureTranslatorClient>().SetHandlerLifetime(TimeSpan.FromMinutes(10));
 
             // determine internal hosting protocol and build listening urls

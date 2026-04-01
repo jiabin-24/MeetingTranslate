@@ -1,25 +1,17 @@
 ﻿using EchoBot.Bot;
 using EchoBot.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using System.Net;
 
 namespace EchoBot.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class CallsController : ControllerBase
+    public class CallsController(ILogger<CallsController> logger,
+        IBotService botService) : ControllerBase
     {
-        private readonly ILogger<CallsController> _logger;
-        private readonly IBotService _botService;
-
-        public CallsController(ILogger<CallsController> logger,
-            IOptions<AppSettings> settings,
-            IBotService botService)
-        {
-            _logger = logger;
-            _botService = botService;
-        }
+        private readonly ILogger<CallsController> _logger = logger;
+        private readonly IBotService _botService = botService;
 
         /// <summary>
         /// The join call async.

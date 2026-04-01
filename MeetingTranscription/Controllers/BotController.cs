@@ -1,8 +1,4 @@
-﻿// <copyright file="BotController.cs" company="Microsoft">
-// Copyright (c) Microsoft. All rights reserved.
-// </copyright>
-
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using System.Threading.Tasks;
@@ -13,16 +9,10 @@ namespace MeetingTranscription.Controllers
     // It acts as an interface between incoming requests and the bot's processing logic for SingleTenant setup.
     [Route("api/messages")]
     [ApiController]
-    public class BotController : ControllerBase
+    public class BotController(CloudAdapter adapter, IBot bot) : ControllerBase
     {
-        private readonly CloudAdapter adapter;  // Updated to CloudAdapter for SingleTenant authentication
-        private readonly IBot _bot;
-
-        public BotController(CloudAdapter adapter, IBot bot)
-        {
-            this.adapter = adapter;
-            _bot = bot;
-        }
+        private readonly CloudAdapter adapter = adapter;  // Updated to CloudAdapter for SingleTenant authentication
+        private readonly IBot _bot = bot;
 
         [HttpPost]
         [HttpGet]

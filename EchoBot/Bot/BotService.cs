@@ -40,6 +40,7 @@ namespace EchoBot.Bot
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
         private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromMinutes(5);
+        private static readonly TimeSpan NotificationOwnerExpiry = TimeSpan.FromMinutes(30);
 
         /// <summary>
         /// The Graph logger
@@ -74,6 +75,7 @@ namespace EchoBot.Bot
         public ICommunicationsClient Client { get; private set; }
 
         private readonly IConnectionMultiplexer _mux = mux;
+        private readonly string _instanceId = $"{Environment.MachineName}:{Environment.ProcessId}";
 
 
         /// <summary>
@@ -216,6 +218,12 @@ namespace EchoBot.Bot
                             action: () => this.Client.Calls().AddAsync(joinParams, scenarioId),
                             completedStateSelector: call => call.Id).ConfigureAwait(false);
 
+                        // Set the notification owner for this call to ensure that this instance receives the notifications for this call.
+                        await _mux.GetDatabase().StringSetAsync(
+                            CacheConstants.CallNotificationOwnerKey(statefulCall.Id),
+                            _instanceId,
+                            NotificationOwnerExpiry).ConfigureAwait(false);
+
                         _logger.LogInformation("Call creation complete: {Id}", statefulCall.Id);
                         return statefulCall;
                     }
@@ -336,6 +344,7 @@ namespace EchoBot.Bot
                     });
                 }
                 _ = db.KeyDeleteAsync(CacheConstants.CallConnectionStateKey(threadId));
+                _ = db.KeyDeleteAsync(CacheConstants.CallNotificationOwnerKey(call.Id));
             }
         }
 
