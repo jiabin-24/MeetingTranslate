@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 import { API_BASE, USE_BYTE_DANCE } from '../config/apiBase';
-import CaptionsPanel from "./captionsPanel";
+
+const CaptionsPanel = React.lazy(() => import('./captionsPanel'));
 
 // Handles redirection after successful/failure sign in attempt.
 const AppInMeeting = props => {
@@ -60,13 +61,15 @@ const AppInMeeting = props => {
                 </select>
             </div>
             {meetingId ? (
-                <CaptionsPanel
-                    url={wsUrl}
-                    meetingId={meetingId}
-                    sourceLang={sourceLang}
-                    targetLang={targetLang}
-                    currentUser={currentUser}
-                />
+                <React.Suspense fallback={<div className="loading-meeting">Loading captions...</div>}>
+                    <CaptionsPanel
+                        url={wsUrl}
+                        meetingId={meetingId}
+                        sourceLang={sourceLang}
+                        targetLang={targetLang}
+                        currentUser={currentUser}
+                    />
+                </React.Suspense>
             ) : (
                 <div className="loading-meeting">Waiting for meeting context...</div>
             )}

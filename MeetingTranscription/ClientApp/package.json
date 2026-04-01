@@ -43,6 +43,9 @@
     "clean": "npx shx rm -rf build",
     "start": "cross-env HOST=0.0.0.0 HTTPS=true react-scripts start",
     "build": "craco build",
+    "build:analyze": "cross-env GENERATE_SOURCEMAP=true craco build",
+    "analyze": "source-map-explorer 'build/static/js/*.js'",
+    "analyze:full": "npm run build:analyze && npm run analyze",
     "test": "react-scripts test"
   },
   "browserslist": {

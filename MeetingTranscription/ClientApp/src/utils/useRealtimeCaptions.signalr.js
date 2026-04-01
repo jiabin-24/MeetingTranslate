@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import * as signalR from '@microsoft/signalr';
 import { API_BASE } from '../config/apiBase';
 
 // This file implements a manager that shares a single SignalR connection and
@@ -97,28 +96,29 @@ function createManager({ meetingId, targetLang, hubUrl, currentUser }) {
 
     const connect = () => {
         if (closed) return;
-        const hub = hubUrl || '';
-        conn = new signalR.HubConnectionBuilder()
-            .withUrl(hub)
-            .withAutomaticReconnect({ nextRetryDelayInMilliseconds: () => 2000 })
-            .build();
-
-        conn.on('caption', (msg) => {
-            try { lines = mergeCaptions(lines, msg); notifyAll(); } catch (_) { }
-        });
-
-        conn.onclose(() => {
-            if (closed) return;
-            if (reconnectRef != null) return;
-            reconnectRef = window.setTimeout(() => {
-                reconnectRef = null;
-                backoff = Math.min(backoff * 2, 15000);
-                connect();
-            }, backoff);
-        });
-
         (async () => {
             try {
+                const signalR = await import('@microsoft/signalr');
+                const hub = hubUrl || '';
+                conn = new signalR.HubConnectionBuilder()
+                    .withUrl(hub)
+                    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: () => 2000 })
+                    .build();
+
+                conn.on('caption', (msg) => {
+                    try { lines = mergeCaptions(lines, msg); notifyAll(); } catch (_) { }
+                });
+
+                conn.onclose(() => {
+                    if (closed) return;
+                    if (reconnectRef != null) return;
+                    reconnectRef = window.setTimeout(() => {
+                        reconnectRef = null;
+                        backoff = Math.min(backoff * 2, 15000);
+                        connect();
+                    }, backoff);
+                });
+
                 await conn.start();
                 backoff = 1000;
                 const token = (currentUser && currentUser.token) ? currentUser.token : null;
