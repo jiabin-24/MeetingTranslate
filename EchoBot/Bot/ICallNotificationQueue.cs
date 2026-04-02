@@ -1,9 +1,11 @@
+using EchoBot.Models;
+
 namespace EchoBot.Bot
 {
     public interface ICallNotificationQueue
     {
         string InstanceId { get; }
 
-        Task EnqueueForInstanceAsync(string instanceId, string payload);
+        Task EnqueueForInstanceAsync(string instanceId, QueuedCallNotification notification);
     }
 }

@@ -6,9 +6,9 @@
 
         public static string CallConnectionStateKey(string threadId) => $"{threadId}:CallConnectionState";
 
-        public static string CallNotificationOwnerKey(string callId) => $"{callId}:CallNotificationOwner";
+        public static string CallNotificationOwnerKey(string callId) => $"CallNotificationOwner:{callId}";
 
-        public static string CallNotificationQueueKey(string instanceId) => $"{instanceId}:CallNotificationQueue";
+        public static string CallNotificationQueueKey(string instanceId) => $"CallNotificationQueue:{instanceId}";
 
         public static string CallParticipantsKey(string threadId, string? name) => string.IsNullOrEmpty(name) ? $"{threadId}:CallParticipants" : $"{threadId}:CallParticipants:{name}";
 
