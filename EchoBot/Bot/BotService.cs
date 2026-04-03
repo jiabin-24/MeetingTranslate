@@ -40,7 +40,7 @@ namespace EchoBot.Bot
         IConnectionMultiplexer mux) : IDisposable, IBotService
     {
         private static readonly TimeSpan CallConnectionExpiry = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan NotificationOwnerExpiry = TimeSpan.FromMinutes(30);
+        private static readonly TimeSpan NotificationOwnerExpiry = TimeSpan.FromHours(2);
 
         /// <summary>
         /// The Graph logger

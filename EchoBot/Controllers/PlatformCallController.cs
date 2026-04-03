@@ -15,7 +15,6 @@ namespace EchoBot.Controllers
         IConnectionMultiplexer mux,
         ICallNotificationQueue callNotificationQueue) : ControllerBase
     {
-        private static readonly TimeSpan NotificationOwnerTtl = TimeSpan.FromMinutes(30);
         private readonly ILogger<PlatformCallController> _logger = logger;
         private readonly IConnectionMultiplexer _mux = mux;
         private readonly ICallNotificationQueue _callNotificationQueue = callNotificationQueue;
@@ -53,17 +52,11 @@ namespace EchoBot.Controllers
                 var ownerKey = CacheConstants.CallNotificationOwnerKey(callId);
                 var db = _mux.GetDatabase();
 
-                var ownerSet = await db.StringSetAsync(ownerKey, _instanceId, NotificationOwnerTtl, when: When.NotExists).ConfigureAwait(false);
-                if (!ownerSet)
+                var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
+                if (owner.HasValue && !owner.ToString().Equals(_instanceId, StringComparison.Ordinal))
                 {
-                    var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
-                    if (owner.HasValue && !owner.ToString().Equals(_instanceId, StringComparison.Ordinal))
-                    {
-                        targetInstance = owner.ToString();
-                    }
+                    targetInstance = owner.ToString();
                 }
-
-                _ = db.KeyExpireAsync(ownerKey, NotificationOwnerTtl);
             }
 
             await _callNotificationQueue.EnqueueForInstanceAsync(targetInstance, new QueuedCallNotification
