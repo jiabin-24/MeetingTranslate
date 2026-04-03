@@ -15,6 +15,7 @@ namespace EchoBot.Controllers
         IConnectionMultiplexer mux,
         ICallNotificationQueue callNotificationQueue) : ControllerBase
     {
+        private static readonly TimeSpan NotificationOwnerTtl = TimeSpan.FromHours(1);
         private readonly ILogger<PlatformCallController> _logger = logger;
         private readonly IConnectionMultiplexer _mux = mux;
         private readonly ICallNotificationQueue _callNotificationQueue = callNotificationQueue;
@@ -62,6 +63,7 @@ namespace EchoBot.Controllers
             }
 
             var targetInstance = owner.ToString();
+            await db.KeyExpireAsync(ownerKey, NotificationOwnerTtl).ConfigureAwait(false);
 
             await _callNotificationQueue.EnqueueForInstanceAsync(targetInstance, new QueuedCallNotification
             {
