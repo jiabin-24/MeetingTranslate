@@ -45,19 +45,23 @@ namespace EchoBot.Controllers
         private async Task<HttpResponseMessage> ProcessNotificationWithOwnerRoutingAsync()
         {
             var (payload, callId) = await JoinInfo.ReadPayloadAndCallIdAsync(this.Request).ConfigureAwait(false);
-            var targetInstance = _instanceId;
-
-            if (!string.IsNullOrWhiteSpace(callId))
+            if (string.IsNullOrWhiteSpace(callId))
             {
-                var ownerKey = CacheConstants.CallNotificationOwnerKey(callId);
-                var db = _mux.GetDatabase();
-
-                var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
-                if (owner.HasValue && !owner.ToString().Equals(_instanceId, StringComparison.Ordinal))
-                {
-                    targetInstance = owner.ToString();
-                }
+                _logger.LogWarning("Notification skipped because callId is missing.");
+                return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted);
             }
+
+            var ownerKey = CacheConstants.CallNotificationOwnerKey(callId);
+            var db = _mux.GetDatabase();
+            var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
+
+            if (!owner.HasValue || string.IsNullOrWhiteSpace(owner.ToString()))
+            {
+                _logger.LogWarning("Notification skipped because owner not found in redis. CallId={CallId}, Current={CurrentInstance}", callId, _instanceId);
+                return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted);
+            }
+
+            var targetInstance = owner.ToString();
 
             await _callNotificationQueue.EnqueueForInstanceAsync(targetInstance, new QueuedCallNotification
             {
