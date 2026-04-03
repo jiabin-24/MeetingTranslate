@@ -75,7 +75,7 @@ namespace EchoBot.Bot
         public ICommunicationsClient Client { get; private set; }
 
         private readonly IConnectionMultiplexer _mux = mux;
-        private readonly string _instanceId = $"{Environment.MachineName}:{Environment.ProcessId}";
+        private readonly string _instanceId = Environment.MachineName;
 
 
         /// <summary>
@@ -329,7 +329,7 @@ namespace EchoBot.Bot
                 var threadId = call.Resource.ChatInfo.ThreadId!;
                 var callHandler = new CallHandler(call);
                 this.CallHandlers[threadId] = callHandler;
-                _ = db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), call.Id, CallConnectionExpiry);
+                _ = db.StringSetAsync(CacheConstants.CallConnectionStateKey(threadId), call.Id, CallConnectionExpiry, when: When.NotExists);
             }
 
             foreach (var call in args.RemovedResources)
