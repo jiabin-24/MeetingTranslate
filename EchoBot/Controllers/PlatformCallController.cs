@@ -1,9 +1,7 @@
 ﻿using EchoBot.Bot;
 using EchoBot.Constants;
 using EchoBot.Models;
-using EchoBot.Util;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Graph.Communications.Client;
 using StackExchange.Redis;
 
 namespace EchoBot.Controllers
@@ -14,13 +12,11 @@ namespace EchoBot.Controllers
     [ApiController]
     [Route(HttpRouteConstants.CallSignalingRoutePrefix)]
     public class PlatformCallController(ILogger<PlatformCallController> logger,
-        IBotService botService,
         IConnectionMultiplexer mux,
         ICallNotificationQueue callNotificationQueue) : ControllerBase
     {
         private static readonly TimeSpan NotificationOwnerTtl = TimeSpan.FromMinutes(30);
         private readonly ILogger<PlatformCallController> _logger = logger;
-        private readonly IBotService _botService = botService;
         private readonly IConnectionMultiplexer _mux = mux;
         private readonly ICallNotificationQueue _callNotificationQueue = callNotificationQueue;
         private readonly string _instanceId = callNotificationQueue.InstanceId;
@@ -50,6 +46,7 @@ namespace EchoBot.Controllers
         private async Task<HttpResponseMessage> ProcessNotificationWithOwnerRoutingAsync()
         {
             var (payload, callId) = await JoinInfo.ReadPayloadAndCallIdAsync(this.Request).ConfigureAwait(false);
+            var targetInstance = _instanceId;
 
             if (!string.IsNullOrWhiteSpace(callId))
             {
@@ -62,29 +59,22 @@ namespace EchoBot.Controllers
                     var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
                     if (owner.HasValue && !owner.ToString().Equals(_instanceId, StringComparison.Ordinal))
                     {
-                        var ownerInstance = owner.ToString();
-                        await _callNotificationQueue.EnqueueForInstanceAsync(ownerInstance, new QueuedCallNotification
-                        {
-                            Payload = payload,
-                            Authorization = this.Request.Headers.Authorization.ToString(),
-                            ContentType = this.Request.ContentType
-                        }).ConfigureAwait(false);
-
-                        _logger.LogInformation("Notification queued to owner instance. CallId={CallId}, Current={CurrentInstance}, Owner={OwnerInstance}", callId, _instanceId, ownerInstance);
-                        return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted);
+                        targetInstance = owner.ToString();
                     }
                 }
 
                 _ = db.KeyExpireAsync(ownerKey, NotificationOwnerTtl);
             }
 
-            if (this.Request.Body.CanSeek)
+            await _callNotificationQueue.EnqueueForInstanceAsync(targetInstance, new QueuedCallNotification
             {
-                this.Request.Body.Position = 0;
-            }
+                Payload = payload,
+                Authorization = this.Request.Headers.Authorization.ToString(),
+                ContentType = this.Request.ContentType
+            }).ConfigureAwait(false);
 
-            var httpRequestMessage = HttpHelpers.ToHttpRequestMessage(this.Request);
-            return await _botService.Client.ProcessNotificationAsync(httpRequestMessage).ConfigureAwait(false);
+            _logger.LogInformation("Notification queued. CallId={CallId}, Current={CurrentInstance}, Target={TargetInstance}", callId, _instanceId, targetInstance);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Accepted);
         }
     }
 }
