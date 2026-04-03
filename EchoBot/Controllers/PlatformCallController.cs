@@ -60,9 +60,9 @@ namespace EchoBot.Controllers
                 if (!ownerSet)
                 {
                     var owner = await db.StringGetAsync(ownerKey).ConfigureAwait(false);
-                    string ownerInstance;
-                    if (owner.HasValue && !(ownerInstance = owner.ToString()).Equals(_instanceId, StringComparison.Ordinal))
+                    if (owner.HasValue && !owner.ToString().Equals(_instanceId, StringComparison.Ordinal))
                     {
+                        var ownerInstance = owner.ToString();
                         await _callNotificationQueue.EnqueueForInstanceAsync(ownerInstance, new QueuedCallNotification
                         {
                             Payload = payload,
