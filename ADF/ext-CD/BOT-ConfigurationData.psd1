@@ -60,6 +60,10 @@
                 @{
                     Name  = 'AppSettings:MediaInternalPort'
                     Value = '8445'
+                },
+                @{
+                    Name  = 'ASPNETCORE_ENVIRONMENT'
+                    Value = 'Staging'
                 }
             )
             
