@@ -464,7 +464,7 @@ resource VMSSAutoscale 'Microsoft.Insights/autoscalesettings@2021-05-01-preview'
               metricResourceUri: VMSS.id
               operator: 'GreaterThan'
               statistic: 'Average'
-              threshold: 50
+              threshold: 65
               timeAggregation: 'Average'
               timeGrain: 'PT1M'
               timeWindow: 'PT6M'
