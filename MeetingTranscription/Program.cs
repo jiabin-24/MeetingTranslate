@@ -94,16 +94,18 @@ static class Program
 
         var app = builder.Build();
         var spaFileProvider = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "ClientApp", "build"));
-        var combinedStaticFileProvider = new CompositeFileProvider(app.Environment.WebRootFileProvider, spaFileProvider);
 
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
-
         app.UseCors("DevCors");
         app.UseWebSockets();
-        app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = combinedStaticFileProvider, RequestPath = string.Empty });
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = combinedStaticFileProvider, RequestPath = string.Empty });
         app.UseBotServices();
+        app.UseStaticFiles(); // 继续保留 wwwroot
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = spaFileProvider,
+            RequestPath = ""
+        });
 
         app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
         {
@@ -113,6 +115,11 @@ static class Program
             pattern: "{controller=Home}/{action=Index}/{id?}");
 
             endpoints.MapHub<CaptionSignalRHub>("/captionHub"); // SignalR hub for captions
+            endpoints.MapFallbackToFile("/index.html", new StaticFileOptions
+            {
+                FileProvider = spaFileProvider,
+                RequestPath = string.Empty
+            });
         });
 
         // WebSocket endpoint that ACS will connect to (configure this URL in MediaStreamingOptions.TransportUri)
@@ -140,7 +147,6 @@ static class Program
         });
 
         ServiceLocator.Initialize(app.Services);
-
         app.Run();
     }
 
