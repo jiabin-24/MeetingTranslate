@@ -5,33 +5,27 @@ using System.Threading.Tasks;
 
 namespace MeetingTranscription.Controllers
 {
-    public class HomeController : Controller
+    public class HomeController(ConcurrentDictionary<string, string> transcriptsDictionary)
+        : Controller
     {
-        private readonly ConcurrentDictionary<string, string> _transcriptsDictionary;
-
         /// <summary>
         /// Stores the Azure configuration values.
         /// </summary>
-        private readonly GraphHelper _graphHelper;
-
-        public HomeController(ConcurrentDictionary<string, string> transcriptsDictionary)
-        {
-            _graphHelper = new();
-            _transcriptsDictionary = transcriptsDictionary;
-        }
+        private readonly GraphHelper _graphHelper = new();
 
         /// <summary>
         /// Returns view to be displayed in Task Module.
         /// </summary>
         /// <param name="meetingId">Id of the meeting.</param>
         /// <returns></returns>
-        public async Task<IActionResult> Index([FromQuery] string meetingId)
+        [HttpGet("Home/Index/{meetingId?}")]
+        public async Task<IActionResult> Index([FromRoute] string meetingId)
         {
             ViewBag.Transcripts = "Transcript not found.";
 
             if (!string.IsNullOrEmpty(meetingId))
             {
-                var isFound = _transcriptsDictionary.TryGetValue(meetingId, out string transcripts);
+                var isFound = transcriptsDictionary.TryGetValue(meetingId, out string transcripts);
                 if (isFound)
                 {
                     ViewBag.Transcripts = $"Format: {transcripts}";
@@ -41,7 +35,7 @@ namespace MeetingTranscription.Controllers
                     var result = await _graphHelper.GetMeetingTranscriptionsAsync(meetingId);
                     if (!string.IsNullOrEmpty(meetingId))
                     {
-                        _transcriptsDictionary.AddOrUpdate(meetingId, result, (key, newValue) => result);
+                        transcriptsDictionary.AddOrUpdate(meetingId, result, (key, newValue) => result);
                         ViewBag.Transcripts = $"Format: {result}";
                     }
                 }
