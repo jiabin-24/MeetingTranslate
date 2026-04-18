@@ -101,7 +101,7 @@ static class Program
 
         app.UseCors("DevCors");
         app.UseWebSockets();
-        app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spaFileProvider, RequestPath = string.Empty });
+        app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = combinedStaticFileProvider, RequestPath = string.Empty });
         app.UseStaticFiles(new StaticFileOptions { FileProvider = combinedStaticFileProvider, RequestPath = string.Empty });
         app.UseBotServices();
 
