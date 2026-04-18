@@ -19,11 +19,13 @@ using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Connector.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 
 static class Program
 {
@@ -53,12 +55,6 @@ static class Program
 
         // Create the Bot Adapter with error handling enabled.
         builder.Services.AddSingleton<CloudAdapter, AdapterWithErrorHandler>();
-
-        // In production, the React files will be served from this directory
-        builder.Services.AddSpaStaticFiles(configuration =>
-        {
-            configuration.RootPath = "ClientApp/build";
-        });
 
         builder.RegisterBotServices();
 
@@ -97,15 +93,17 @@ static class Program
         });
 
         var app = builder.Build();
+        var spaFileProvider = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "ClientApp", "build"));
+        var combinedStaticFileProvider = new CompositeFileProvider(app.Environment.WebRootFileProvider, spaFileProvider);
+
         if (app.Environment.IsDevelopment())
             app.UseDeveloperExceptionPage().UseSwagger().UseSwaggerUI();
 
         app.UseCors("DevCors");
         app.UseWebSockets();
-        app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = spaFileProvider, RequestPath = string.Empty });
+        app.UseStaticFiles(new StaticFileOptions { FileProvider = combinedStaticFileProvider, RequestPath = string.Empty });
         app.UseBotServices();
-        app.UseSpaStaticFiles();
 
         app.UseRouting().UseAuthorization().UseEndpoints(endpoints =>
         {
@@ -141,15 +139,6 @@ static class Program
             await AcsWebSocketHandlerRegistry.Register(threadId, targetLang, handler).RunAsync(ws, context.RequestAborted);
         });
 
-        app.UseSpa(spa =>
-        {
-            spa.Options.SourcePath = "ClientApp";
-            if (app.Environment.IsDevelopment())
-            {
-                //spa.Options.StartupTimeout = TimeSpan.FromSeconds(120);
-                //spa.UseReactDevelopmentServer(npmScript: "start");
-            }
-        });
         ServiceLocator.Initialize(app.Services);
 
         app.Run();
