@@ -382,6 +382,21 @@
         "chefClient": 0
       }
     },
+    "Server2025": {
+      "imageReference": {
+        "publisher": "MicrosoftWindowsServer",
+        "Offer": "WindowsServer",
+        "sku": "2025-Datacenter",
+        "version": "latest"
+      },
+      "licenseType": "Windows_Server",
+      "OS": "Windows",
+      "OSDiskGB": 127,
+      "RoleExtensions": {
+        "Scripts": 0,
+        "chefClient": 0
+      }
+    },
     "Server2019Core": {
       "imageReference": {
         "publisher": "MicrosoftWindowsServer",
